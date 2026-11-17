@@ -143,7 +143,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope() {
         super.onDestroy()
 
         permissionHandler.onDestroy()
-        cacheDir.deleteRecursively()
+        // Do not erase cached split APKs on configuration changes. The selected
+        // installation queue can still reference these files after recreation.
     }
 
     private fun checkIntentForPackage(intent: Intent) {
