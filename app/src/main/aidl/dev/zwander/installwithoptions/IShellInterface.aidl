@@ -12,6 +12,7 @@ interface IShellInterface {
         IOptionsApplier optionsApplier,
         String installerPackageName,
         int userId,
+        String statusToken,
         IErrorCallback errorCallback
     ) = 1;
     List getUserIds() = 2;
