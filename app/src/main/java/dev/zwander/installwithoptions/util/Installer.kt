@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInstaller
+import android.content.res.AssetFileDescriptor
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +50,7 @@ import dev.zwander.installwithoptions.data.Settings
 import dev.zwander.installwithoptions.data.getMutableOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 const val INSTALL_STATUS_ACTION =
     "${BuildConfig.APPLICATION_ID}.intent.action.INSTALL_STATUS"
@@ -79,8 +81,12 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
     var isInstalling by remember {
         mutableStateOf(false)
     }
+    var expectedPackages by remember {
+        mutableStateOf(setOf<String>())
+    }
 
     val options by DataModel.selectedOptions.collectAsState()
+    val updatedOptions by rememberUpdatedState(options)
 
     val applier = remember {
         object : IOptionsApplier.Stub() {
@@ -101,8 +107,9 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
                         legacyStatus = intent.getIntExtra("android.content.pm.extra.LEGACY_STATUS", Int.MIN_VALUE),
                     )
                     val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                    val packageName =
-                        intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME) ?: ""
+                    val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
+                        ?.takeIf { it.isNotBlank() }
+                        ?: intent.getStringExtra(REQUESTED_PACKAGE_EXTRA).orEmpty()
 
                     when (status) {
                         PackageInstaller.STATUS_PENDING_USER_ACTION -> {
@@ -153,8 +160,10 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
         }
     }
 
-    LaunchedEffect(key1 = statuses.size) {
-        if (statuses.size == updatedFiles.size) {
+    LaunchedEffect(statuses, expectedPackages) {
+        if (expectedPackages.isNotEmpty() &&
+            statuses.map { it.packageName }.toSet().containsAll(expectedPackages)
+        ) {
             isInstalling = false
         }
     }
@@ -172,7 +181,10 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
         }
     }
 
-    statuses.takeIf { it.isNotEmpty() && it.size == updatedFiles.size }?.let { s ->
+    statuses.takeIf {
+        it.isNotEmpty() && expectedPackages.isNotEmpty() &&
+            it.map { result -> result.packageName }.toSet().containsAll(expectedPackages)
+    }?.let { s ->
         AlertDialog(
             onDismissRequest = { statuses = listOf() },
             confirmButton = {
@@ -230,57 +242,69 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
     return Installer(
         install = remember {
             {
-                if (shellInterface != null) {
+                val backend = shellInterface
+                val installFiles = updatedFiles
+                if (backend == null || isInstalling || installFiles.isEmpty()) {
+                    if (backend == null) {
+                        android.widget.Toast.makeText(
+                            context,
+                            R.string.a17_backend_not_ready,
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                } else {
+                    statuses = emptyList()
+                    expectedPackages = installFiles.keys
                     isInstalling = true
-                }
 
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        shellInterface?.install(
-                            updatedFiles.map { (k, v) ->
-                                k to v.map {
-                                    context.contentResolver.openAssetFileDescriptor(
-                                        it.uri,
-                                        "r",
-                                    )
+                    scope.launch(Dispatchers.IO) {
+                        val openedDescriptors = mutableListOf<AssetFileDescriptor>()
+                        try {
+                            val descriptors = installFiles.mapValues { (_, documentFiles) ->
+                                documentFiles.map { file ->
+                                    (context.contentResolver.openAssetFileDescriptor(file.uri, "r")
+                                        ?: throw IOException("Cannot read ${file.uri}")).also {
+                                        openedDescriptors.add(it)
+                                    }
                                 }
-                            }.toMap(),
-                            options.map { it.value }.toIntArray(),
-                            applier,
-                            MutableOption.InstallerPackage.settingsKey.getValue(),
-                            MutableOption.TargetUser.settingsKey.getValue(),
-                            object : IErrorCallback.Stub() {
-                                override fun onError(error: String?, errorClass: String?) {
-                                    SafeBugsnag.leaveBreadcrumb(
-                                        "$errorClass: $error",
-                                    )
-
-                                    statuses = updatedFiles.flatMap { (_, v) ->
-                                        v.map {
+                            }
+                            backend.install(
+                                descriptors,
+                                updatedOptions.map { it.value }.toIntArray(),
+                                applier,
+                                MutableOption.InstallerPackage.settingsKey.getValue(),
+                                MutableOption.TargetUser.settingsKey.getValue(),
+                                object : IErrorCallback.Stub() {
+                                    override fun onError(error: String?, errorClass: String?) {
+                                        SafeBugsnag.leaveBreadcrumb("$errorClass: $error")
+                                        statuses = installFiles.keys.map { pkg ->
                                             InstallResult(
                                                 status = InstallStatus.FAILURE,
-                                                packageName = it.name ?: it.uri.toString(),
+                                                packageName = pkg,
                                                 message = "$errorClass: $error",
                                                 specificMessage = null,
                                             )
                                         }
                                     }
-                                }
-                            },
-                        )
-                    } catch (e: Exception) {
-                        statuses = updatedFiles.flatMap { (_, v) ->
-                            v.map {
+                                },
+                            )
+                        } catch (e: Exception) {
+                            statuses = installFiles.keys.map { pkg ->
                                 InstallResult(
                                     status = InstallStatus.FAILURE,
-                                    packageName = it.name ?: it.uri.toString(),
+                                    packageName = pkg,
                                     message = e.extractErrorMessage() ?: e.toString(),
                                     specificMessage = null,
                                 )
                             }
+                        } finally {
+                            openedDescriptors.forEach { fd ->
+                                runCatching { fd.close() }
+                            }
                         }
                     }
                 }
+                Unit
             }
         },
         isInstalling = isInstalling,

@@ -4,30 +4,37 @@ package dev.zwander.installwithoptions.util
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import dev.zwander.installwithoptions.data.DataModel
 import net.lingala.zip4j.ZipFile
-import net.lingala.zip4j.exception.ZipException
 import java.io.File
+import java.io.IOException
+import java.util.UUID
 
 fun Context.handleIncomingUris(uris: List<Uri>) {
-    DataModel.isImporting.value = true
-    val currentSelection = DataModel.selectedFiles.value.toMutableMap()
-
-    uris.forEach { uri ->
-        val file = DocumentFile.fromSingleUri(this, uri) ?: return@forEach
-
-        if (file.isApk) {
-            addApkFile(file, currentSelection)
-        } else if (file.isSplitBundle) {
-            copyZipToCacheAndExtract(file).forEach { innerFile ->
-                addApkFile(innerFile, currentSelection)
+    synchronized(DataModel) {
+        DataModel.isImporting.value = true
+        try {
+            val selection = DataModel.selectedFiles.value.toMutableMap()
+            uris.distinct().forEach { uri ->
+                try {
+                    val file = DocumentFile.fromSingleUri(this, uri) ?: return@forEach
+                    when {
+                        file.isApk -> addApkFile(file, selection)
+                        file.isSplitBundle -> copyZipToCacheAndExtract(file).forEach {
+                            addApkFile(it, selection)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("InstallWithOptions", "Failed to import $uri", e)
+                }
             }
+            DataModel.selectedFiles.value = selection
+        } finally {
+            DataModel.isImporting.value = false
         }
     }
-
-    DataModel.selectedFiles.value = currentSelection
-    DataModel.isImporting.value = false
 }
 
 private val apkLiteClass by lazy {
@@ -42,66 +49,75 @@ private val parseApkLiteMethod by lazy {
         .getMethod("parseApkLite", File::class.java, Int::class.java)
 }
 
-private fun Context.addApkFile(file: DocumentFile, currentSelection: MutableMap<String, List<DocumentFile>>) {
+private fun Context.addApkFile(
+    file: DocumentFile,
+    currentSelection: MutableMap<String, List<DocumentFile>>,
+) {
+    var temporary: File? = null
     try {
-        val realFile = if (file.uri.scheme == "file") file else run {
-            contentResolver.openInputStream(file.uri).use { input ->
-                val dest = File(cacheDir, "${file.name ?: file.uri}")
-                dest.outputStream().use { output ->
-                    input?.copyTo(output)
+        val apkOnDisk = if (file.uri.scheme == "file") {
+            File(file.uri.path ?: throw IOException("Missing APK path"))
+        } else {
+            File.createTempFile("iwo_apk_", ".apk", cacheDir).also { dest ->
+                temporary = dest
+                (contentResolver.openInputStream(file.uri)
+                    ?: throw IOException("APK content could not be opened")).use { input ->
+                    dest.outputStream().use { output ->
+                        input.copyTo(output, bufferSize = 256 * 1024)
+                    }
                 }
-                DocumentFile.fromFile(dest)
             }
         }
-        val apkFile = realFile.uri.path?.let {
-            parseApkLiteMethod.invoke(null, File(it), 0)
-        }
-
-        if (apkFile != null) {
-            val packageName = apkLitePackageNameField.get(apkFile) as String
-            val packageList = currentSelection[packageName] ?: listOf()
-
-            currentSelection[packageName] = (packageList + file).distinctBy { "${packageName}:${it.name}" }
-        }
-    } catch (_: Throwable) {}
+        val apkLite = parseApkLiteMethod.invoke(null, apkOnDisk, 0) ?: return
+        val packageName = apkLitePackageNameField.get(apkLite) as String
+        val packageList = currentSelection[packageName].orEmpty()
+        currentSelection[packageName] = (packageList + file).distinctBy { it.uri }
+    } catch (e: Exception) {
+        Log.e("InstallWithOptions", "Failed to read APK $file", e)
+    } finally {
+        temporary?.delete()
+    }
 }
 
 private fun Context.copyZipToCacheAndExtract(zip: DocumentFile): List<DocumentFile> {
-    val destFile = File(cacheDir, zip.name ?: zip.uri.toString())
-    val destDir = File(cacheDir, "${destFile.name}_extracted").apply {
-        deleteRecursively()
-        mkdirs()
-    }
-
+    val archive = File.createTempFile("iwo_bundle_", ".zip", cacheDir)
+    val directory = File(cacheDir, "iwo_extract_${UUID.randomUUID()}").apply { mkdirs() }
     try {
-        contentResolver.openInputStream(zip.uri).use { input ->
-            destFile.outputStream().use { output ->
-                input?.copyTo(output)
+        (contentResolver.openInputStream(zip.uri)
+            ?: throw IOException("Archive could not be opened")).use { input ->
+            archive.outputStream().use { output ->
+                input.copyTo(output, bufferSize = 256 * 1024)
             }
         }
-    } catch (_: IllegalStateException) {
-        return listOf()
-    } catch (_: SecurityException) {
-        return listOf()
+        val zipFile = ZipFile(archive)
+        val headers = zipFile.fileHeaders
+        val root = directory.canonicalPath + File.separator
+        if (headers.size > 4096 || headers.any { it.isEncrypted } ||
+            headers.any { it.uncompressedSize < 0L } ||
+            headers.sumOf { it.uncompressedSize } > 8L * 1024 * 1024 * 1024 ||
+            headers.any { header ->
+                !File(directory, header.fileName).canonicalPath.startsWith(root)
+            }
+        ) {
+            throw IOException("Bundle contains unsafe, encrypted, or excessive ZIP entries")
+        }
+
+        zipFile.extractAll(directory.absolutePath)
+        return directory.walkTopDown()
+            .filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
+            .map { DocumentFile.fromFile(it) }
+            .toList()
+    } catch (e: Exception) {
+        Log.e("InstallWithOptions", "Failed to extract bundle $zip", e)
+        directory.deleteRecursively()
+        return emptyList()
+    } finally {
+        archive.delete()
     }
-
-    val zipFile = ZipFile(destFile)
-
-    try {
-        zipFile.extractAll(destDir.absolutePath)
-    } catch (_: ZipException) {
-        return listOf()
-    }
-
-    return destDir.listFiles()?.mapNotNull { file ->
-        val documentFile = DocumentFile.fromFile(file)
-
-        if (documentFile.isApk) documentFile else null
-    } ?: listOf()
 }
 
 private val DocumentFile.isApk: Boolean
-    get() = type == "application/vnd.android.package-archive" || name?.endsWith(".apk") == true
+    get() = type == "application/vnd.android.package-archive" || name?.endsWith(".apk", ignoreCase = true) == true
 
 private val DocumentFile.isSplitBundle: Boolean
-    get() = type == "application/zip" || name?.endsWith(".xapk") == true || name?.endsWith(".apkm") == true || name?.endsWith(".apks") == true
+    get() = type == "application/zip" || name?.endsWith(".xapk", ignoreCase = true) == true || name?.endsWith(".apkm", ignoreCase = true) == true || name?.endsWith(".apks", ignoreCase = true) == true

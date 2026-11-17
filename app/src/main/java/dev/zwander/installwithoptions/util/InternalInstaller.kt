@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
 import android.os.Build
 import android.os.IBinder
@@ -16,8 +17,8 @@ import android.util.Log
 import dev.zwander.installwithoptions.BuildConfig
 import dev.zwander.installwithoptions.IOptionsApplier
 import rikka.shizuku.SystemServiceHelper
+import java.io.IOException
 import java.io.OutputStream
-import kotlin.random.Random
 
 class InternalInstaller(private val context: Context) {
     private val packageInstaller by lazy {
@@ -37,18 +38,28 @@ class InternalInstaller(private val context: Context) {
         installerPackageName: String,
         userId: Int,
     ) {
-        fileDescriptors.forEach { (_, fds) ->
-            installPackagesInSession(fds.toTypedArray(), options, applier, installerPackageName, userId)
+        fileDescriptors.forEach { (expectedPackageName, fds) ->
+            installPackagesInSession(
+                expectedPackageName = expectedPackageName,
+                fileDescriptors = fds.toTypedArray(),
+                options = options,
+                applier = applier,
+                installerPackageName = installerPackageName,
+                userId = userId,
+                isBatch = fileDescriptors.size > 1,
+            )
         }
     }
 
     @SuppressLint("InlinedApi")
     private fun installPackagesInSession(
+        expectedPackageName: String,
         fileDescriptors: Array<AssetFileDescriptor>,
         options: IntArray,
         applier: IOptionsApplier,
         installerPackageName: String,
         userId: Int,
+        isBatch: Boolean,
     ) {
         try {
             val params: PackageInstaller.SessionParams = PackageInstaller.SessionParams(
@@ -57,6 +68,17 @@ class InternalInstaller(private val context: Context) {
                 options.reduceOrNull { acc, i -> acc or i }?.let { flags ->
                     PackageInstaller.SessionParams::class.java.getField("installFlags")
                         .set(this, flags)
+                }
+
+                // Allow PackageInstaller to allocate space and associate callbacks
+                // with the right package on Android 17 / One UI 9.
+                setAppPackageName(expectedPackageName)
+                val lengths = fileDescriptors.map { it.length }
+                if (lengths.all { it >= 0L }) {
+                    setSize(lengths.sum())
+                }
+                if (isBatch && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setInstallScenario(PackageManager.INSTALL_SCENARIO_BULK)
                 }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -102,11 +124,13 @@ class InternalInstaller(private val context: Context) {
 
             try {
                 val statusIntent = PendingIntent.getBroadcast(
-                    context, Random.nextInt(),
+                    context, sessionId,
                     Intent(INSTALL_STATUS_ACTION).apply {
                         `package` = BuildConfig.APPLICATION_ID
+                        putExtra(REQUESTED_PACKAGE_EXTRA, expectedPackageName)
                     },
-                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT,
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or
+                        PendingIntent.FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT,
                 )
 
                 fileDescriptors.forEachIndexed { index, fd ->
@@ -133,10 +157,22 @@ class InternalInstaller(private val context: Context) {
                         }
                     }
 
-                    writer?.use { output ->
-                        fd.createInputStream()?.use { input ->
-                            input.copyTo(output)
+                    try {
+                        val output = writer ?: throw IOException("Could not open installer write stream")
+                        output.use { stream ->
+                            val input = fd.createInputStream()
+                                ?: throw IOException("Could not open APK input stream")
+                            input.use {
+                                val copied = it.copyTo(stream, bufferSize = 256 * 1024)
+                                if (fd.length >= 0L && copied != fd.length) {
+                                    throw IOException(
+                                        "Incomplete APK: copied $copied of ${fd.length} bytes",
+                                    )
+                                }
+                            }
                         }
+                    } finally {
+                        fd.close()
                     }
                 }
 
@@ -154,8 +190,10 @@ class InternalInstaller(private val context: Context) {
                 }
             } catch (e: Throwable) {
                 Log.e("InstallWithOptions", "error", e)
-                session::class.java.getMethod("abandon").invoke(session)
+                runCatching { session::class.java.getMethod("abandon").invoke(session) }
                 throw e
+            } finally {
+                runCatching { session::class.java.getMethod("close").invoke(session) }
             }
         } catch (e: Throwable) {
             Log.e("InstallWithOptions", "error", e)

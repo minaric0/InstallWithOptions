@@ -201,6 +201,85 @@ sealed class MutableOption<T : Any?>(
 
     @SuppressLint("InlinedApi")
     @Keep
+    data object InstallScenario : MutableOption<Int>(
+        settingsKey = SettingsKey.Int(
+            key = "install_scenario",
+            default = -1, // Auto: bulk for multi-package installs, default otherwise.
+            settings = Settings.settings,
+        ),
+        operator = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it != -1) {
+                setInstallScenario(it)
+            }
+        },
+        labelResource = R.string.a17_install_scenario,
+        descResource = R.string.a17_install_scenario_desc,
+        minSdk = Build.VERSION_CODES.S,
+    ) {
+        private val scenarios = listOf(
+            Option(
+                label = { stringResource(R.string.a17_scenario_auto) },
+                value = -1,
+            ),
+            Option(
+                label = { stringResource(R.string.a17_scenario_default) },
+                value = PackageManager.INSTALL_SCENARIO_DEFAULT,
+            ),
+            Option(
+                label = { stringResource(R.string.a17_scenario_fast) },
+                value = PackageManager.INSTALL_SCENARIO_FAST,
+            ),
+            Option(
+                label = { stringResource(R.string.a17_scenario_bulk) },
+                value = PackageManager.INSTALL_SCENARIO_BULK,
+            ),
+            Option(
+                label = { stringResource(R.string.a17_scenario_bulk_secondary) },
+                value = PackageManager.INSTALL_SCENARIO_BULK_SECONDARY,
+            ),
+        )
+
+        @Composable
+        override fun RenderValueSelector(modifier: Modifier) {
+            var state by value.collectAsMutableState()
+            DropdownMenuSelector(
+                value = scenarios.firstOrNull { it.value == state },
+                onValueChanged = { state = it.value },
+                values = scenarios,
+                modifier = modifier,
+            )
+        }
+    }
+
+    @Keep
+    data object PreserveDisabledState : MutableOption<Boolean>(
+        settingsKey = SettingsKey.Boolean(
+            key = "preserve_disabled_state",
+            default = false,
+            settings = Settings.settings,
+        ),
+        operator = {
+            if (it && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                setApplicationEnabledSettingPersistent()
+            }
+        },
+        labelResource = R.string.a17_preserve_disabled,
+        descResource = R.string.a17_preserve_disabled_desc,
+        minSdk = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+    ) {
+        @Composable
+        override fun RenderValueSelector(modifier: Modifier) {
+            var state by value.collectAsMutableState()
+            androidx.compose.material3.Switch(
+                checked = state,
+                onCheckedChange = { state = it },
+                modifier = modifier,
+            )
+        }
+    }
+
+    @SuppressLint("InlinedApi")
+    @Keep
     data object TargetUser : MutableOption<Int>(
         settingsKey = SettingsKey.Int(
             key = "target_user",

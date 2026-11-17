@@ -11,11 +11,11 @@ android {
     namespace = "dev.zwander.installwithoptions"
     compileSdk = 37
     defaultConfig {
-        applicationId = "dev.zwander.installwithoptions"
+        applicationId = "dev.zwander.installwithoptions.a17"
         minSdk = 24
         targetSdk = 37
-        versionCode = 27
-        versionName = "0.9.2"
+        versionCode = 28
+        versionName = "0.9.2-a17.1"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -94,4 +94,5 @@ dependencies {
     implementation(libs.libsu.core)
     implementation(libs.libsu.service)
     implementation(libs.zip4j)
+    testImplementation("junit:junit:4.13.2")
 }

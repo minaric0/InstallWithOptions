@@ -61,37 +61,42 @@ class ShellInterface constructor() : IShellInterface.Stub() {
     }
 
     override fun getUserIds(): List<Int> {
-        val userInfoClass = Class.forName("android.content.pm.UserInfo")
-        val userInfoIdField = userInfoClass.getField("id")
-        val userManagerInstance = Class.forName("android.os.IUserManager\$Stub")
-            .getMethod("asInterface", IBinder::class.java)
-            .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
-        val users = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT_FULL <= Build.VERSION_CODES_FULL.BAKLAVA) {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-                Boolean::class.java,
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false, false, false)
-        } else {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false)
-        } as? List<*>
-        val getProfiles = userManagerInstance::class.java.getMethod(
-            "getProfiles",
-            Int::class.java,
-            Boolean::class.java,
-        )
+        // Samsung's API 37 user service can expose a different AIDL signature
+        // from older Android versions. Prefer feature detection over SDK checks.
+        return runCatching {
+            val userInfoClass = Class.forName("android.content.pm.UserInfo")
+            val idField = userInfoClass.getField("id")
+            val manager = Class.forName("android.os.IUserManager\$Stub")
+                .getMethod("asInterface", IBinder::class.java)
+                .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
 
-        @Suppress("UNCHECKED_CAST")
-        val profiles = users?.flatMap { user ->
-            (getProfiles.invoke(userManagerInstance, userInfoIdField.get(user) as Int, false) as? List<*>)?.map { userInfoIdField.get(it) as Int }
-                ?: listOf()
-        } ?: listOf()
+            val managerClass = manager::class.java
+            val users = runCatching {
+                managerClass.getMethod(
+                    "getUsers",
+                    Boolean::class.java, Boolean::class.java, Boolean::class.java,
+                ).invoke(manager, false, false, false)
+            }.getOrElse {
+                managerClass.getMethod("getUsers", Boolean::class.java)
+                    .invoke(manager, false)
+            } as? List<*>
 
-        return profiles
+            val result = users.orEmpty().flatMap { user ->
+                val id = idField.get(user) as Int
+                val profiles = runCatching {
+                    managerClass.getMethod(
+                        "getProfiles", Int::class.java, Boolean::class.java,
+                    ).invoke(manager, id, false)
+                }.getOrElse {
+                    managerClass.getMethod("getProfiles", Int::class.java)
+                        .invoke(manager, id)
+                } as? List<*>
+                profiles.orEmpty().mapNotNull {
+                    runCatching { idField.get(it) as Int }.getOrNull()
+                } + id
+            }.distinct().sorted()
+            result.ifEmpty { listOf(myUserId()) }
+        }.getOrElse { listOf(myUserId()) }
     }
 
     override fun isRootOrSystem(): Boolean {

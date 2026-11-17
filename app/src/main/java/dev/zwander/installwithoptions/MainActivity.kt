@@ -82,12 +82,15 @@ import dev.icerock.moko.mvvm.flow.compose.collectAsMutableState
 import dev.zwander.installwithoptions.components.Footer
 import dev.zwander.installwithoptions.data.DataModel
 import dev.zwander.installwithoptions.data.InstallOption
+import dev.zwander.installwithoptions.data.A17InstallPreset
+import dev.zwander.installwithoptions.data.A17InstallPresets
 import dev.zwander.installwithoptions.data.MutableOption
 import dev.zwander.installwithoptions.data.rememberInstallOptions
 import dev.zwander.installwithoptions.data.rememberMutableOptions
 import dev.zwander.installwithoptions.ui.theme.InstallWithOptionsTheme
 import dev.zwander.installwithoptions.util.ElevatedPermissionHandler
 import dev.zwander.installwithoptions.util.LocalShellInterface
+import dev.zwander.installwithoptions.util.getShizukuPackageName
 import dev.zwander.installwithoptions.util.handleIncomingUris
 import dev.zwander.installwithoptions.util.plus
 import dev.zwander.installwithoptions.util.rememberPackageInstaller
@@ -143,7 +146,9 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope() {
         super.onDestroy()
 
         permissionHandler.onDestroy()
-        cacheDir.deleteRecursively()
+        if (isFinishing && !isChangingConfigurations) {
+            cacheDir.deleteRecursively()
+        }
     }
 
     private fun checkIntentForPackage(intent: Intent) {
@@ -201,6 +206,14 @@ fun MainContent(modifier: Modifier = Modifier) {
         resources.getString(it.labelResource)
     }
     val (install, isInstalling, total, completed) = rememberPackageInstaller(selectedFiles)
+    val backendReady = LocalShellInterface.current != null
+    val shizukuVersion = remember(context, backendReady) {
+        runCatching {
+            context.getShizukuPackageName()?.let { pkg ->
+                context.packageManager.getPackageInfo(pkg, 0).versionName
+            }
+        }.getOrNull()
+    }
 
     Box(
         modifier = modifier,
@@ -238,6 +251,7 @@ fun MainContent(modifier: Modifier = Modifier) {
                                             Toast.makeText(context, R.string.error_selecting_files, Toast.LENGTH_SHORT).show()
                                         }
                                     },
+                                    enabled = !isInstalling && !isImporting,
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Box(
@@ -269,7 +283,8 @@ fun MainContent(modifier: Modifier = Modifier) {
 
                                 OutlinedButton(
                                     onClick = { install() },
-                                    enabled = selectedFiles.isNotEmpty(),
+                                    enabled = selectedFiles.isNotEmpty() && backendReady &&
+                                        !isInstalling && !isImporting,
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(text = stringResource(id = R.string.install))
@@ -301,6 +316,78 @@ fun MainContent(modifier: Modifier = Modifier) {
                                 WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
                                     .asPaddingValues(),
                     ) {
+                        if (A17InstallPresets.isTargetDevice) {
+                            item(key = "a17_profile") {
+                                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.a17_profile_title),
+                                            style = MaterialTheme.typography.titleMedium,
+                                        )
+                                        Text(
+                                            text = if (backendReady) {
+                                                stringResource(R.string.a17_backend_ready)
+                                            } else {
+                                                stringResource(R.string.a17_backend_not_ready)
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    selectedOptions = A17InstallPresets.optionsFor(
+                                                        A17InstallPreset.SAFE,
+                                                    )
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                            ) { Text(stringResource(R.string.a17_safe_preset)) }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    selectedOptions = A17InstallPresets.optionsFor(
+                                                        A17InstallPreset.LEGACY,
+                                                    )
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                            ) { Text(stringResource(R.string.a17_legacy_preset)) }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    selectedOptions = A17InstallPresets.optionsFor(
+                                                        A17InstallPreset.TEST,
+                                                    )
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                            ) { Text(stringResource(R.string.a17_test_preset)) }
+                                        }
+                                        if (shizukuVersion == "13.6.0") {
+                                            Text(
+                                                text = stringResource(R.string.a17_mediatek_shizuku_warning),
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                        }
+                                        Text(
+                                            text = stringResource(R.string.a17_preset_explanation),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (Build.VERSION.SDK_INT >= 34 &&
+                            selectedOptions.contains(InstallOption.AllowDowngrade)
+                        ) {
+                            item(key = "a17_downgrade_warning") {
+                                Text(
+                                    text = stringResource(R.string.a17_downgrade_warning),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
                         items(items = options, key = { it.labelResource }) { option ->
                             when (option) {
                                 is InstallOption -> {
