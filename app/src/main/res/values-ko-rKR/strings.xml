@@ -101,4 +101,13 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_system">시스템</string>
+    <string name="a175n_profile_title">갤럭시 A17 / 안드로이드 17 프로필</string>
+    <string name="a175n_profile_device">감지: %1$s · API %2$d · 빌드 %3$s</string>
+    <string name="a175n_service_ready">설치 서비스: 연결됨</string>
+    <string name="a175n_service_missing">설치 서비스: 연결 안 됨 (Shizuku 시작 또는 루트 권한 필요)</string>
+    <string name="a175n_preset_standard">기본</string>
+    <string name="a175n_preset_test">테스트 APK</string>
+    <string name="a175n_preset_legacy">구형 APK</string>
+    <string name="a175n_profile_caveat">프리셋을 선택하면 기존 플래그가 교체됩니다. 구형 APK 모드는 최소 target SDK 제한만 우회하며, 서명 불일치·지원하지 않는 ABI·다운그레이드 제한은 우회하지 못합니다.</string>
+    <string name="a175n_profile_mismatch">SM-A175N / Android 17(API 37)이 감지되지 않아 기기 전용 프리셋을 비활성화했습니다.</string>
 </resources>
