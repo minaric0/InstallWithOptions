@@ -39,6 +39,7 @@
 
                 <data android:mimeType="application/vnd.android.package-archive" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
 
             <intent-filter>
@@ -48,6 +49,7 @@
 
                 <data android:mimeType="application/vnd.android.package-archive" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
 
