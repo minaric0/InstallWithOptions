@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.lsposed.hiddenapibypass.HiddenApiBypass
+import java.util.concurrent.TimeUnit
 
 @OptIn(DelicateCoroutinesApi::class)
 class App : Application() {
@@ -34,10 +35,23 @@ class App : Application() {
         }
 
         GlobalScope.launch(Dispatchers.IO) {
+            pruneStaleImportCaches()
             Settings.Keys.enableCrashReports.asMutableStateFlow().collect {
                 if (it && !Bugsnag.isStarted()) {
                     startBugsnag()
                 }
+            }
+        }
+    }
+
+    private fun pruneStaleImportCaches() {
+        val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(2)
+        cacheDir.listFiles()?.forEach { entry ->
+            val ownedImport = entry.name.startsWith("iwo_apks_") ||
+                entry.name.startsWith("iwo_bundle_") ||
+                entry.name.startsWith("iwo_parse_")
+            if (ownedImport && entry.lastModified() < cutoff) {
+                runCatching { entry.deleteRecursively() }
             }
         }
     }
