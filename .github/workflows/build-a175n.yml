@@ -1,0 +1,59 @@
+name: Build SM-A175N Android 17 APK
+
+on:
+  push:
+    branches:
+      - feature/sm-a175n-android17-oneui9
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a175n-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 17 SDK from runner tools
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          SDK_MANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDK_MANAGER" ]; then
+            SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 3 -type f -name sdkmanager | sort -V | tail -1)"
+          fi
+          test -n "$SDK_MANAGER"
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" --install --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble arm64 debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload installable debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: InstallWithOptions-SM-A175N-Android17-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

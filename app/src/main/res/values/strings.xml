@@ -147,4 +147,15 @@
 
     <string name="install_failed_no_matching_abis">The app you\'re attempting to install contains 32-bit-only code and your device only supports 64-bit code. You won\'t be able to install or use this app.</string>
     <string name="install_failed_already_exists">This app is already installed. To reinstall or upgrade, make sure the \"Replace Existing\" option is checked.</string>
+    <string name="install_scenario">Install Scenario</string>
+    <string name="install_scenario_desc">Choose Android\'s installation optimization policy. Fast favors rapid launch; Bulk favors completed optimization.</string>
+    <string name="scenario_default">System Default</string>
+    <string name="scenario_fast">Fast / Interactive</string>
+    <string name="scenario_bulk">Bulk / Optimized</string>
+    <string name="scenario_bulk_secondary">Bulk / Lightweight</string>
+    <string name="user_action_requirement">User Confirmation</string>
+    <string name="user_action_requirement_desc">Request confirmation behavior. Android 17 may still require confirmation regardless of this setting.</string>
+    <string name="user_action_unspecified">System Default</string>
+    <string name="user_action_required">Required</string>
+    <string name="user_action_not_required">Not Required (if permitted)</string>
 </resources>

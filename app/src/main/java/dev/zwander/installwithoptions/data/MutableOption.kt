@@ -201,6 +201,97 @@ sealed class MutableOption<T : Any?>(
 
     @SuppressLint("InlinedApi")
     @Keep
+    data object InstallScenario : MutableOption<Int>(
+        settingsKey = SettingsKey.Int(
+            key = "install_scenario",
+            default = PackageManager.INSTALL_SCENARIO_DEFAULT,
+            settings = Settings.settings,
+        ),
+        operator = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setInstallScenario(it)
+            }
+        },
+        minSdk = Build.VERSION_CODES.S,
+        labelResource = R.string.install_scenario,
+        descResource = R.string.install_scenario_desc,
+    ) {
+        private val choices = mapOf(
+            PackageManager.INSTALL_SCENARIO_DEFAULT to Option(
+                label = { stringResource(R.string.scenario_default) },
+                value = PackageManager.INSTALL_SCENARIO_DEFAULT,
+            ),
+            PackageManager.INSTALL_SCENARIO_FAST to Option(
+                label = { stringResource(R.string.scenario_fast) },
+                value = PackageManager.INSTALL_SCENARIO_FAST,
+            ),
+            PackageManager.INSTALL_SCENARIO_BULK to Option(
+                label = { stringResource(R.string.scenario_bulk) },
+                value = PackageManager.INSTALL_SCENARIO_BULK,
+            ),
+            PackageManager.INSTALL_SCENARIO_BULK_SECONDARY to Option(
+                label = { stringResource(R.string.scenario_bulk_secondary) },
+                value = PackageManager.INSTALL_SCENARIO_BULK_SECONDARY,
+            ),
+        )
+
+        @Composable
+        override fun RenderValueSelector(modifier: Modifier) {
+            var state by value.collectAsMutableState()
+            DropdownMenuSelector(
+                value = choices[state],
+                onValueChanged = { state = it.value },
+                values = choices.values,
+                modifier = modifier,
+            )
+        }
+    }
+
+    @SuppressLint("InlinedApi")
+    @Keep
+    data object UserActionRequirement : MutableOption<Int>(
+        settingsKey = SettingsKey.Int(
+            key = "user_action_requirement",
+            default = SessionParams.USER_ACTION_UNSPECIFIED,
+            settings = Settings.settings,
+        ),
+        operator = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setRequireUserAction(it)
+            }
+        },
+        minSdk = Build.VERSION_CODES.S,
+        labelResource = R.string.user_action_requirement,
+        descResource = R.string.user_action_requirement_desc,
+    ) {
+        private val choices = mapOf(
+            SessionParams.USER_ACTION_UNSPECIFIED to Option(
+                label = { stringResource(R.string.user_action_unspecified) },
+                value = SessionParams.USER_ACTION_UNSPECIFIED,
+            ),
+            SessionParams.USER_ACTION_REQUIRED to Option(
+                label = { stringResource(R.string.user_action_required) },
+                value = SessionParams.USER_ACTION_REQUIRED,
+            ),
+            SessionParams.USER_ACTION_NOT_REQUIRED to Option(
+                label = { stringResource(R.string.user_action_not_required) },
+                value = SessionParams.USER_ACTION_NOT_REQUIRED,
+            ),
+        )
+
+        @Composable
+        override fun RenderValueSelector(modifier: Modifier) {
+            var state by value.collectAsMutableState()
+            DropdownMenuSelector(
+                value = choices[state],
+                onValueChanged = { state = it.value },
+                values = choices.values,
+                modifier = modifier,
+            )
+        }
+    }
+
+    @Keep
     data object TargetUser : MutableOption<Int>(
         settingsKey = SettingsKey.Int(
             key = "target_user",

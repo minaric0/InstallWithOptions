@@ -11,14 +11,17 @@ android {
     namespace = "dev.zwander.installwithoptions"
     compileSdk = 37
     defaultConfig {
-        applicationId = "dev.zwander.installwithoptions"
+        applicationId = "dev.minaric0.installwithoptions.a175n"
         minSdk = 24
         targetSdk = 37
-        versionCode = 27
-        versionName = "0.9.2"
+        versionCode = 28
+        versionName = "0.10.0-a175n"
 
         vectorDrawables {
             useSupportLibrary = true
+        }
+        ndk {
+            abiFilters += listOf("arm64-v8a")
         }
 
         manifestPlaceholders["build_uuid"] = UUID.nameUUIDFromBytes("InstallWithOptions_${versionCode}".toByteArray()).toString()
@@ -63,7 +66,7 @@ kotlin {
 
 afterEvaluate {
     base {
-        archivesName.set("InstallWithOptions_${android.defaultConfig.versionName}")
+        archivesName.set("InstallWithOptions_A175N_${android.defaultConfig.versionName}")
     }
 }
 

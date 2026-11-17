@@ -3,105 +3,138 @@
 package dev.zwander.installwithoptions.util
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import dev.zwander.installwithoptions.data.DataModel
 import net.lingala.zip4j.ZipFile
-import net.lingala.zip4j.exception.ZipException
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+
+private const val MAX_ARCHIVE_ENTRIES = 512
+private const val MAX_ARCHIVE_COMPRESSED_BYTES = 2L * 1024 * 1024 * 1024
+private const val MAX_ARCHIVE_EXTRACTED_BYTES = 4L * 1024 * 1024 * 1024
 
 fun Context.handleIncomingUris(uris: List<Uri>) {
     DataModel.isImporting.value = true
-    val currentSelection = DataModel.selectedFiles.value.toMutableMap()
-
-    uris.forEach { uri ->
-        val file = DocumentFile.fromSingleUri(this, uri) ?: return@forEach
-
-        if (file.isApk) {
-            addApkFile(file, currentSelection)
-        } else if (file.isSplitBundle) {
-            copyZipToCacheAndExtract(file).forEach { innerFile ->
-                addApkFile(innerFile, currentSelection)
-            }
-        }
-    }
-
-    DataModel.selectedFiles.value = currentSelection
-    DataModel.isImporting.value = false
-}
-
-private val apkLiteClass by lazy {
-    Class.forName("android.content.pm.PackageParser\$ApkLite")
-}
-private val apkLitePackageNameField by lazy {
-    apkLiteClass.getField("packageName")
-}
-
-private val parseApkLiteMethod by lazy {
-    Class.forName("android.content.pm.PackageParser")
-        .getMethod("parseApkLite", File::class.java, Int::class.java)
-}
-
-private fun Context.addApkFile(file: DocumentFile, currentSelection: MutableMap<String, List<DocumentFile>>) {
     try {
-        val realFile = if (file.uri.scheme == "file") file else run {
-            contentResolver.openInputStream(file.uri).use { input ->
-                val dest = File(cacheDir, "${file.name ?: file.uri}")
-                dest.outputStream().use { output ->
-                    input?.copyTo(output)
+        val selected = DataModel.selectedFiles.value.toMutableMap()
+        uris.forEach { uri ->
+            runCatching {
+                val file = DocumentFile.fromSingleUri(this, uri) ?: return@runCatching
+                when {
+                    file.isApk -> addApkFile(file, selected)
+                    file.isSplitBundle -> copyZipToCacheAndExtract(file).forEach {
+                        addApkFile(it, selected)
+                    }
                 }
-                DocumentFile.fromFile(dest)
             }
         }
-        val apkFile = realFile.uri.path?.let {
-            parseApkLiteMethod.invoke(null, File(it), 0)
-        }
-
-        if (apkFile != null) {
-            val packageName = apkLitePackageNameField.get(apkFile) as String
-            val packageList = currentSelection[packageName] ?: listOf()
-
-            currentSelection[packageName] = (packageList + file).distinctBy { "${packageName}:${it.name}" }
-        }
-    } catch (_: Throwable) {}
+        DataModel.selectedFiles.value = selected
+    } finally {
+        DataModel.isImporting.value = false
+    }
 }
 
-private fun Context.copyZipToCacheAndExtract(zip: DocumentFile): List<DocumentFile> {
-    val destFile = File(cacheDir, zip.name ?: zip.uri.toString())
-    val destDir = File(cacheDir, "${destFile.name}_extracted").apply {
-        deleteRecursively()
-        mkdirs()
-    }
+private val parseApkLite by lazy {
+    runCatching {
+        Class.forName("android.content.pm.PackageParser")
+            .getMethod("parseApkLite", File::class.java, Int::class.java)
+    }.getOrNull()
+}
 
+private fun Context.addApkFile(
+    document: DocumentFile,
+    selected: MutableMap<String, List<DocumentFile>>,
+) {
+    var tempFile: File? = null
     try {
-        contentResolver.openInputStream(zip.uri).use { input ->
-            destFile.outputStream().use { output ->
-                input?.copyTo(output)
+        val localFile = if (document.uri.scheme == "file") {
+            document.uri.path?.let(::File) ?: return
+        } else {
+            File.createTempFile("iwo-import-", ".apk", cacheDir).also { dest ->
+                tempFile = dest
+                contentResolver.openInputStream(document.uri)?.use { input ->
+                    dest.outputStream().use { input.copyTo(it, 128 * 1024) }
+                } ?: error("Unable to read APK")
             }
         }
-    } catch (_: IllegalStateException) {
-        return listOf()
-    } catch (_: SecurityException) {
-        return listOf()
+
+        val packageName = packageManager.getPackageArchiveInfo(
+            localFile.absolutePath,
+            PackageManager.GET_META_DATA,
+        )?.packageName ?: runCatching {
+            val lite = parseApkLite?.invoke(null, localFile, 0)
+            lite?.javaClass?.getField("packageName")?.get(lite) as? String
+        }.getOrNull()
+
+        if (!packageName.isNullOrBlank()) {
+            val existing = selected[packageName].orEmpty()
+            selected[packageName] = (existing + document)
+                .distinctBy { it.uri.toString() }
+        }
+    } finally {
+        tempFile?.delete()
     }
+}
 
-    val zipFile = ZipFile(destFile)
-
-    try {
-        zipFile.extractAll(destDir.absolutePath)
-    } catch (_: ZipException) {
-        return listOf()
+private fun InputStream.copyBounded(output: OutputStream, maximum: Long) {
+    val buffer = ByteArray(128 * 1024)
+    var count = 0L
+    while (true) {
+        val n = read(buffer)
+        if (n < 0) return
+        count += n
+        require(count <= maximum) { "Archive exceeds allowed size" }
+        output.write(buffer, 0, n)
     }
+}
 
-    return destDir.listFiles()?.mapNotNull { file ->
-        val documentFile = DocumentFile.fromFile(file)
+private fun Context.copyZipToCacheAndExtract(bundle: DocumentFile): List<DocumentFile> {
+    if (bundle.length() > MAX_ARCHIVE_COMPRESSED_BYTES) return emptyList()
 
-        if (documentFile.isApk) documentFile else null
-    } ?: listOf()
+    val zipFile = File.createTempFile("iwo-bundle-", ".zip", cacheDir)
+    val extractDir = File(cacheDir, zipFile.nameWithoutExtension + "-extracted")
+    return try {
+        contentResolver.openInputStream(bundle.uri)?.use { input ->
+            zipFile.outputStream().use { output ->
+                input.copyBounded(output, MAX_ARCHIVE_COMPRESSED_BYTES)
+            }
+        } ?: return emptyList()
+
+        val archive = ZipFile(zipFile)
+        val entries = archive.fileHeaders
+        require(entries.size <= MAX_ARCHIVE_ENTRIES) { "Too many archive entries" }
+        require(entries.all {
+            val path = it.fileName.replace('\\', '/')
+            !path.startsWith("/") && path.split('/').none { part -> part == ".." }
+        }) { "Unsafe archive entry path" }
+        require(entries.all { it.uncompressedSize >= 0 } &&
+            entries.sumOf { it.uncompressedSize.coerceAtMost(MAX_ARCHIVE_EXTRACTED_BYTES + 1) }
+                <= MAX_ARCHIVE_EXTRACTED_BYTES
+        ) { "Extracted archive would be too large" }
+
+        extractDir.mkdirs()
+        archive.extractAll(extractDir.absolutePath)
+        extractDir.walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".apk", ignoreCase = true) }
+            .take(MAX_ARCHIVE_ENTRIES)
+            .map(DocumentFile::fromFile)
+            .toList()
+    } catch (_: Exception) {
+        emptyList()
+    } finally {
+        zipFile.delete()
+    }
 }
 
 private val DocumentFile.isApk: Boolean
-    get() = type == "application/vnd.android.package-archive" || name?.endsWith(".apk") == true
+    get() = type == "application/vnd.android.package-archive" ||
+        name?.endsWith(".apk", ignoreCase = true) == true
 
 private val DocumentFile.isSplitBundle: Boolean
-    get() = type == "application/zip" || name?.endsWith(".xapk") == true || name?.endsWith(".apkm") == true || name?.endsWith(".apks") == true
+    get() = type == "application/zip" ||
+        listOf(".zip", ".xapk", ".apkm", ".apks").any {
+            name?.endsWith(it, ignoreCase = true) == true
+        }

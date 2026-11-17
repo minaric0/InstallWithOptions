@@ -87,6 +87,7 @@ import dev.zwander.installwithoptions.data.rememberInstallOptions
 import dev.zwander.installwithoptions.data.rememberMutableOptions
 import dev.zwander.installwithoptions.ui.theme.InstallWithOptionsTheme
 import dev.zwander.installwithoptions.util.ElevatedPermissionHandler
+import dev.zwander.installwithoptions.util.DeviceProfileCard
 import dev.zwander.installwithoptions.util.LocalShellInterface
 import dev.zwander.installwithoptions.util.handleIncomingUris
 import dev.zwander.installwithoptions.util.plus
@@ -269,7 +270,8 @@ fun MainContent(modifier: Modifier = Modifier) {
 
                                 OutlinedButton(
                                     onClick = { install() },
-                                    enabled = selectedFiles.isNotEmpty(),
+                                    enabled = selectedFiles.isNotEmpty() && !isInstalling &&
+                                        LocalShellInterface.current != null,
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(text = stringResource(id = R.string.install))
@@ -301,6 +303,33 @@ fun MainContent(modifier: Modifier = Modifier) {
                                 WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
                                     .asPaddingValues(),
                     ) {
+                        item(key = "device_profile") {
+                            DeviceProfileCard()
+                        }
+                        item(key = "install_presets") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = { selectedOptions = listOf(InstallOption.ReplaceExisting) },
+                                    modifier = Modifier.weight(1f),
+                                ) { Text(text = "Standard APK") }
+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            selectedOptions = listOf(
+                                                InstallOption.ReplaceExisting,
+                                                InstallOption.AllowTest,
+                                                InstallOption.BypassLowTargetSdkBlock,
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    ) { Text(text = "Legacy APK") }
+                                }
+                            }
+                        }
                         items(items = options, key = { it.labelResource }) { option ->
                             when (option) {
                                 is InstallOption -> {
