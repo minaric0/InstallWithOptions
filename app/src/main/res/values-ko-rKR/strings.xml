@@ -110,4 +110,5 @@
     <string name="a175n_preset_legacy">구형 APK</string>
     <string name="a175n_profile_caveat">프리셋을 선택하면 기존 플래그가 교체됩니다. 구형 APK 모드는 최소 target SDK 제한만 우회하며, 서명 불일치·지원하지 않는 ABI·다운그레이드 제한은 우회하지 못합니다.</string>
     <string name="a175n_profile_mismatch">SM-A175N / Android 17(API 37)이 감지되지 않아 기기 전용 프리셋을 비활성화했습니다.</string>
+    <string name="a175n_advanced_protection_warning">Android 고급 보호 기능이 켜져 있습니다. APK 사이드로딩이 차단될 수 있으며, 설치 플래그로 이 정책을 우회할 수 없습니다.</string>
 </resources>
