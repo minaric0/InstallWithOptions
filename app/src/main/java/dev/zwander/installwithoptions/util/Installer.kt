@@ -304,6 +304,7 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
                         }
                     }
                 }
+                Unit
             }
         },
         isInstalling = isInstalling,
