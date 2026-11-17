@@ -1,6 +1,12 @@
 package dev.zwander.installwithoptions
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
+import android.text.format.Formatter
 import android.security.advancedprotection.AdvancedProtectionManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -53,6 +59,26 @@ internal fun DeviceProfileCard(
         context.getSystemService(AdvancedProtectionManager::class.java)
             ?.isAdvancedProtectionEnabled == true
     }.getOrDefault(false)
+    val availableBytes = runCatching {
+        StatFs(Environment.getDataDirectory().path).availableBytes
+    }.getOrDefault(-1L)
+    val supportedAbis = Build.SUPPORTED_ABIS.joinToString(", ")
+    val storageLabel = if (availableBytes >= 0L) {
+        Formatter.formatShortFileSize(context, availableBytes)
+    } else {
+        "unknown"
+    }
+    val diagnostics = listOf(
+        "Manufacturer: ${Build.MANUFACTURER}",
+        "Model: ${Build.MODEL}",
+        "Android API: ${Build.VERSION.SDK_INT}",
+        "Build: ${Build.DISPLAY}",
+        "Security patch: ${Build.VERSION.SECURITY_PATCH}",
+        "Supported ABIs: $supportedAbis",
+        "Free internal storage: $storageLabel",
+        "Elevated service connected: $connected",
+        "Advanced Protection enabled: $advancedProtectionEnabled",
+    ).joinToString("\\n")
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -78,6 +104,30 @@ internal fun DeviceProfileCard(
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
+            Text(
+                text = stringResource(R.string.a175n_profile_abis, supportedAbis),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.a175n_profile_storage, storageLabel),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.a175n_profile_patch, Build.VERSION.SECURITY_PATCH),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            TextButton(onClick = {
+                (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+                    ?.setPrimaryClip(ClipData.newPlainText("A175N install diagnostics", diagnostics))
+            }) {
+                Text(stringResource(R.string.a175n_copy_diagnostics))
+            }
+            if (matches) {
+                Text(
+                    text = stringResource(R.string.a175n_auto_blocker_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             if (advancedProtectionEnabled) {
                 Text(
                     text = stringResource(R.string.a175n_advanced_protection_warning),
