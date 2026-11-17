@@ -18,7 +18,7 @@ object A17InstallPresets {
             Build.MODEL.equals("SM-A175N", ignoreCase = true) &&
             Build.VERSION.SDK_INT == 37
 
-    fun optionsFor(preset: A17InstallPreset): List<InstallOption> {
+    fun optionsFor(preset: A17InstallPreset, sdk: Int = Build.VERSION.SDK_INT): List<InstallOption> {
         val common = listOf(InstallOption.ReplaceExisting)
         return when (preset) {
             A17InstallPreset.SAFE -> common
@@ -30,6 +30,6 @@ object A17InstallPresets {
                 InstallOption.AllowTest,
                 InstallOption.FromAdb,
             )
-        }.filter { Build.VERSION.SDK_INT in it.minSdk..it.maxSdk }
+        }.filter { sdk in it.minSdk..it.maxSdk }
     }
 }
