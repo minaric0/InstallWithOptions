@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">Install with Options</string>
+    <string name="app_name" translatable="false">Install with Options A17</string>
 
     <string name="choose_files">Choose Files</string>
     <string name="selected_files">Selected Files</string>
@@ -148,6 +148,7 @@
     <string name="install_failed_no_matching_abis">The app you\'re attempting to install contains 32-bit-only code and your device only supports 64-bit code. You won\'t be able to install or use this app.</string>
     <string name="install_failed_already_exists">This app is already installed. To reinstall or upgrade, make sure the \"Replace Existing\" option is checked.</string>
     <string name="a17_profile_title">Galaxy A17 · Android 17 · One UI 9</string>
+    <string name="a17_mediatek_shizuku_warning">Shizuku 13.6.0 has a known MediaTek compatibility issue. Use a version with the fix or Shizuku 13.5.4.</string>
     <string name="a17_backend_ready">Privileged installer connected</string>
     <string name="a17_backend_not_ready">Shizuku/root backend not ready</string>
     <string name="a17_safe_preset">Safe</string>
