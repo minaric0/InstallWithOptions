@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">Install with Options</string>
+    <string name="app_name" translatable="false">Install with Options A17</string>
 
     <string name="choose_files">Choose Files</string>
     <string name="selected_files">Selected Files</string>
@@ -157,4 +157,13 @@
     <string name="a175n_profile_caveat">Presets replace the currently selected flags. Legacy mode bypasses only the minimum target SDK block; it cannot bypass APK signatures, unsupported ABIs or Android downgrade restrictions.</string>
     <string name="a175n_profile_mismatch">SM-A175N on Android 17 (API 37) was not detected. Device presets are disabled.</string>
     <string name="a175n_advanced_protection_warning">Android Advanced Protection is enabled. This security mode can block APK sideloading; installer flags cannot override the device policy.</string>
+    <string name="a175n_error_invalid_apk">Invalid or corrupt APK; verify the archive and all splits.</string>
+    <string name="a175n_error_signature">Installed version has a different signing certificate; uninstalling it may erase its app data.</string>
+    <string name="a175n_error_min_sdk">This APK requires a newer Android version.</string>
+    <string name="a175n_error_max_sdk">This APK declares a maximum Android version lower than the device firmware.</string>
+    <string name="a175n_error_test_apk">Test-only APK. Select the Test APK preset.</string>
+    <string name="a175n_error_downgrade">Older version rejected by Android. The downgrade flag does not override signature or platform restrictions.</string>
+    <string name="a175n_error_missing_split">A required split APK is missing. Select the complete APK bundle.</string>
+    <string name="a175n_error_target_sdk">Android blocked this app for an obsolete target SDK. Legacy APK preset may help if permitted by policy.</string>
+    <string name="a175n_error_user_restricted">Device policy or Samsung protection settings restrict installation.</string>
 </resources>
