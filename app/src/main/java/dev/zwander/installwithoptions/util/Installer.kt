@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInstaller
+import android.content.res.AssetFileDescriptor
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -230,54 +231,58 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
     return Installer(
         install = remember {
             {
-                if (shellInterface != null) {
+                val activeShell = shellInterface
+                if (activeShell != null && !isInstalling && updatedFiles.isNotEmpty()) {
+                    val requestFiles = updatedFiles
+                    val requestOptions = options.map { it.value }.toIntArray()
+                    statuses = emptyList()
                     isInstalling = true
-                }
 
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        shellInterface?.install(
-                            updatedFiles.map { (k, v) ->
-                                k to v.map {
-                                    context.contentResolver.openAssetFileDescriptor(
-                                        it.uri,
-                                        "r",
-                                    )
+                    scope.launch(Dispatchers.IO) {
+                        // Binder handles are valid until the synchronous shell call finishes.
+                        // Close every opened FD, including when an input is invalid or a
+                        // later split fails. Otherwise repeated installs leak descriptors.
+                        val opened = mutableListOf<AssetFileDescriptor>()
+                        try {
+                            val fileDescriptors = requestFiles.mapValues { (_, files) ->
+                                files.map { file ->
+                                    requireNotNull(
+                                        context.contentResolver.openAssetFileDescriptor(file.uri, "r"),
+                                    ) { "Cannot open APK: ${file.name ?: file.uri}" }
+                                        .also { opened.add(it) }
                                 }
-                            }.toMap(),
-                            options.map { it.value }.toIntArray(),
-                            applier,
-                            MutableOption.InstallerPackage.settingsKey.getValue(),
-                            MutableOption.TargetUser.settingsKey.getValue(),
-                            object : IErrorCallback.Stub() {
-                                override fun onError(error: String?, errorClass: String?) {
-                                    SafeBugsnag.leaveBreadcrumb(
-                                        "$errorClass: $error",
-                                    )
-
-                                    statuses = updatedFiles.flatMap { (_, v) ->
-                                        v.map {
+                            }
+                            activeShell.install(
+                                fileDescriptors,
+                                requestOptions,
+                                applier,
+                                MutableOption.InstallerPackage.settingsKey.getValue(),
+                                MutableOption.TargetUser.settingsKey.getValue(),
+                                object : IErrorCallback.Stub() {
+                                    override fun onError(error: String?, errorClass: String?) {
+                                        SafeBugsnag.leaveBreadcrumb("$errorClass: $error")
+                                        statuses = requestFiles.keys.map { packageName ->
                                             InstallResult(
                                                 status = InstallStatus.FAILURE,
-                                                packageName = it.name ?: it.uri.toString(),
+                                                packageName = packageName,
                                                 message = "$errorClass: $error",
                                                 specificMessage = null,
                                             )
                                         }
                                     }
-                                }
-                            },
-                        )
-                    } catch (e: Exception) {
-                        statuses = updatedFiles.flatMap { (_, v) ->
-                            v.map {
+                                },
+                            )
+                        } catch (e: Exception) {
+                            statuses = requestFiles.keys.map { packageName ->
                                 InstallResult(
                                     status = InstallStatus.FAILURE,
-                                    packageName = it.name ?: it.uri.toString(),
+                                    packageName = packageName,
                                     message = e.extractErrorMessage() ?: e.toString(),
                                     specificMessage = null,
                                 )
                             }
+                        } finally {
+                            opened.forEach { runCatching { it.close() } }
                         }
                     }
                 }
