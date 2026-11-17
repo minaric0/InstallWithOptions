@@ -60,38 +60,56 @@ class ShellInterface constructor() : IShellInterface.Stub() {
         exitProcess(0)
     }
 
+    /**
+     * IUserManager signatures change across Android versions. Probe available
+     * overloads and fall back to the current user if OEM APIs differ.
+     */
     override fun getUserIds(): List<Int> {
-        val userInfoClass = Class.forName("android.content.pm.UserInfo")
-        val userInfoIdField = userInfoClass.getField("id")
-        val userManagerInstance = Class.forName("android.os.IUserManager\$Stub")
-            .getMethod("asInterface", IBinder::class.java)
-            .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
-        val users = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT_FULL <= Build.VERSION_CODES_FULL.BAKLAVA) {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-                Boolean::class.java,
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false, false, false)
-        } else {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false)
-        } as? List<*>
-        val getProfiles = userManagerInstance::class.java.getMethod(
-            "getProfiles",
-            Int::class.java,
-            Boolean::class.java,
-        )
+        val currentUser = myUserId()
+        return runCatching {
+            val info = Class.forName("android.content.pm.UserInfo").getField("id")
+            val manager = Class.forName("android.os.IUserManager\$Stub")
+                .getMethod("asInterface", IBinder::class.java)
+                .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
 
-        @Suppress("UNCHECKED_CAST")
-        val profiles = users?.flatMap { user ->
-            (getProfiles.invoke(userManagerInstance, userInfoIdField.get(user) as Int, false) as? List<*>)?.map { userInfoIdField.get(it) as Int }
-                ?: listOf()
-        } ?: listOf()
+            val users = manager.javaClass.methods
+                .filter { it.name == "getUsers" }
+                .sortedByDescending { it.parameterTypes.size }
+                .firstNotNullOfOrNull { method ->
+                    runCatching {
+                        val args = method.parameterTypes.map { type ->
+                            when (type) {
+                                java.lang.Boolean.TYPE -> false
+                                java.lang.Integer.TYPE -> 0
+                                else -> error("Unsupported getUsers argument")
+                            }
+                        }.toTypedArray()
+                        method.invoke(manager, *args) as? List<*>
+                    }.getOrNull()
+                }.orEmpty()
 
-        return profiles
+            val ids = (users.mapNotNull { user ->
+                runCatching { info.getInt(user) }.getOrNull()
+            } + currentUser).distinct()
+
+            val profiles = ids.flatMap { id ->
+                manager.javaClass.methods
+                    .filter {
+                        it.name == "getProfiles" && it.parameterTypes.contentEquals(
+                            arrayOf(java.lang.Integer.TYPE, java.lang.Boolean.TYPE)
+                        )
+                    }
+                    .firstNotNullOfOrNull { method ->
+                        runCatching {
+                            (method.invoke(manager, id, false) as? List<*>)
+                                .orEmpty().mapNotNull { user ->
+                                    runCatching { info.getInt(user) }.getOrNull()
+                                }
+                        }.getOrNull()
+                    }.orEmpty()
+            }
+            (ids + profiles).distinct().sorted()
+        }.getOrElse { listOf(currentUser) }
     }
 
     override fun isRootOrSystem(): Boolean {

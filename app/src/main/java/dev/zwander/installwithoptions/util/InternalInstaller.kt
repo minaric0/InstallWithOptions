@@ -37,13 +37,18 @@ class InternalInstaller(private val context: Context) {
         installerPackageName: String,
         userId: Int,
     ) {
-        fileDescriptors.forEach { (_, fds) ->
-            installPackagesInSession(fds.toTypedArray(), options, applier, installerPackageName, userId)
+        fileDescriptors.forEach { (packageKey, fds) ->
+            try {
+                installPackagesInSession(packageKey, fds.toTypedArray(), options, applier, installerPackageName, userId)
+            } finally {
+                fds.forEach { descriptor -> runCatching { descriptor.close() } }
+            }
         }
     }
 
     @SuppressLint("InlinedApi")
     private fun installPackagesInSession(
+        packageKey: String,
         fileDescriptors: Array<AssetFileDescriptor>,
         options: IntArray,
         applier: IOptionsApplier,
@@ -105,38 +110,41 @@ class InternalInstaller(private val context: Context) {
                     context, Random.nextInt(),
                     Intent(INSTALL_STATUS_ACTION).apply {
                         `package` = BuildConfig.APPLICATION_ID
+                        putExtra(INSTALL_PACKAGE_KEY_EXTRA, packageKey)
                     },
-                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT,
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 )
 
                 fileDescriptors.forEachIndexed { index, fd ->
-                    val writer = (session::class.java.getMethod(
+                    val parcel = session::class.java.getMethod(
                         "openWrite",
                         String::class.java,
                         Long::class.java,
                         Long::class.java,
-                    ).invoke(
-                        session,
-                        "file_${index}",
-                        0,
-                        fd.length,
-                    ) as ParcelFileDescriptor?)?.run {
-                        if (Class.forName("android.os.SystemProperties")
-                                .getMethod("getBoolean", String::class.java, Boolean::class.java)
-                                .invoke(null, "fw.revocable_fd", false) as Boolean
-                        ) {
-                            ParcelFileDescriptor.AutoCloseOutputStream(this)
-                        } else {
-                            Class.forName("android.os.FileBridge\$FileBridgeOutputStream")
-                                .getConstructor(ParcelFileDescriptor::class.java)
-                                .newInstance(this) as OutputStream
-                        }
+                    ).invoke(session, "file_" + index + ".apk", 0L, fd.length) as? ParcelFileDescriptor
+                        ?: error("Installer did not provide a writable descriptor")
+
+                    val output: OutputStream = if (
+                        Class.forName("android.os.SystemProperties")
+                            .getMethod("getBoolean", String::class.java, Boolean::class.java)
+                            .invoke(null, "fw.revocable_fd", false) as Boolean
+                    ) {
+                        ParcelFileDescriptor.AutoCloseOutputStream(parcel)
+                    } else {
+                        Class.forName("android.os.FileBridge\$FileBridgeOutputStream")
+                            .getConstructor(ParcelFileDescriptor::class.java)
+                            .newInstance(parcel) as OutputStream
                     }
 
-                    writer?.use { output ->
-                        fd.createInputStream()?.use { input ->
-                            input.copyTo(output)
+                    output.use { writer ->
+                        fd.createInputStream().use { input ->
+                            val bytesWritten = input.copyTo(writer, bufferSize = 128 * 1024)
+                            if (fd.length >= 0 && bytesWritten != fd.length) {
+                                error("Incomplete APK transfer: " + bytesWritten + " / " + fd.length + " bytes")
+                            }
                         }
+                        session::class.java.getMethod("fsync", OutputStream::class.java)
+                            .invoke(session, writer)
                     }
                 }
 
@@ -154,7 +162,7 @@ class InternalInstaller(private val context: Context) {
                 }
             } catch (e: Throwable) {
                 Log.e("InstallWithOptions", "error", e)
-                session::class.java.getMethod("abandon").invoke(session)
+                runCatching { session::class.java.getMethod("abandon").invoke(session) }
                 throw e
             }
         } catch (e: Throwable) {
