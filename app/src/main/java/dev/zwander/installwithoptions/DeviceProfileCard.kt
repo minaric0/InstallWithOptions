@@ -78,7 +78,7 @@ internal fun DeviceProfileCard(
         "Free internal storage: $storageLabel",
         "Elevated service connected: $connected",
         "Advanced Protection enabled: $advancedProtectionEnabled",
-    ).joinToString("\\n")
+    ).joinToString("\n")
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
