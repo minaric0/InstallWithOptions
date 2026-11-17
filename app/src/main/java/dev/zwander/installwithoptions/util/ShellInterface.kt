@@ -70,7 +70,7 @@ class ShellInterface constructor() : IShellInterface.Stub() {
         return runCatching {
             val userInfoClass = Class.forName("android.content.pm.UserInfo")
             val userInfoIdField = userInfoClass.getField("id")
-            val stub = Class.forName("android.os.IUserManager\\$Stub")
+            val stub = Class.forName("android.os.IUserManager\$Stub")
                 .getMethod("asInterface", IBinder::class.java)
                 .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
             val manager = requireNotNull(stub)
