@@ -49,7 +49,7 @@ class ShellInterface constructor() : IShellInterface.Stub() {
                 fileDescriptors as Map<String, List<AssetFileDescriptor>>,
                 options,
                 applier,
-                installerPackageName.takeIf { !it.isNullOrBlank() } ?: "shell",
+                installerPackageName.takeIf { !it.isNullOrBlank() } ?: "com.android.shell",
                 actualUserId,
                 requireNotNull(statusToken) { "Missing installation status token" },
             )
