@@ -1,6 +1,7 @@
 package dev.zwander.installwithoptions
 
 import android.os.Build
+import android.security.advancedprotection.AdvancedProtectionManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.zwander.installwithoptions.data.InstallOption
@@ -46,6 +48,11 @@ internal fun DeviceProfileCard(
 ) {
     val matches = A175nProfile.matchesDevice
     val connected = LocalShellInterface.current != null
+    val context = LocalContext.current
+    val advancedProtectionEnabled = Build.VERSION.SDK_INT >= 36 && runCatching {
+        context.getSystemService(AdvancedProtectionManager::class.java)
+            ?.isAdvancedProtectionEnabled == true
+    }.getOrDefault(false)
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -71,6 +78,12 @@ internal fun DeviceProfileCard(
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (advancedProtectionEnabled) {
+                Text(
+                    text = stringResource(R.string.a175n_advanced_protection_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             if (matches) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
