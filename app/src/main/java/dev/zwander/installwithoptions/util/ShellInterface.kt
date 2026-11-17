@@ -63,37 +63,47 @@ class ShellInterface constructor() : IShellInterface.Stub() {
     }
 
     override fun getUserIds(): List<Int> {
-        val userInfoClass = Class.forName("android.content.pm.UserInfo")
-        val userInfoIdField = userInfoClass.getField("id")
-        val userManagerInstance = Class.forName("android.os.IUserManager\$Stub")
-            .getMethod("asInterface", IBinder::class.java)
-            .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
-        val users = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT_FULL <= Build.VERSION_CODES_FULL.BAKLAVA) {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-                Boolean::class.java,
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false, false, false)
-        } else {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false)
-        } as? List<*>
-        val getProfiles = userManagerInstance::class.java.getMethod(
-            "getProfiles",
-            Int::class.java,
-            Boolean::class.java,
-        )
+        // Samsung firmware may change hidden IUserManager overloads between
+        // platform releases. User enumeration is optional: failure should never
+        // break the installer or prevent use of the current Android profile.
+        val fallback = listOf(myUserId())
+        return runCatching {
+            val userInfoClass = Class.forName("android.content.pm.UserInfo")
+            val userInfoIdField = userInfoClass.getField("id")
+            val stub = Class.forName("android.os.IUserManager\\$Stub")
+                .getMethod("asInterface", IBinder::class.java)
+                .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
+            val manager = requireNotNull(stub)
+            val getUsers = manager.javaClass.methods
+                .filter { method ->
+                    method.name == "getUsers" && method.parameterTypes.isNotEmpty() &&
+                        method.parameterTypes.all { it == Boolean::class.javaPrimitiveType }
+                }
+                .maxByOrNull { it.parameterTypes.size }
+                ?: return fallback
+            val args: Array<Any> = Array(getUsers.parameterTypes.size) { false }
+            val users = getUsers.invoke(manager, *args) as? List<*> ?: return fallback
 
-        @Suppress("UNCHECKED_CAST")
-        val profiles = users?.flatMap { user ->
-            (getProfiles.invoke(userManagerInstance, userInfoIdField.get(user) as Int, false) as? List<*>)?.map { userInfoIdField.get(it) as Int }
-                ?: listOf()
-        } ?: listOf()
-
-        return profiles
+            val getProfiles = manager.javaClass.methods.firstOrNull { method ->
+                method.name == "getProfiles" && method.parameterTypes.isNotEmpty() &&
+                    method.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    method.parameterTypes.drop(1).all { it == Boolean::class.javaPrimitiveType }
+            }
+            val ids = mutableSetOf(myUserId())
+            users.forEach { user ->
+                if (user == null) return@forEach
+                val uid = userInfoIdField.getInt(user)
+                ids += uid
+                if (getProfiles != null) {
+                    val profileArgs: Array<Any> = arrayOf(uid, *Array(getProfiles.parameterTypes.size - 1) { false })
+                    val profiles = getProfiles.invoke(manager, *profileArgs) as? List<*>
+                    profiles?.forEach { profile ->
+                        if (profile != null) ids += userInfoIdField.getInt(profile)
+                    }
+                }
+            }
+            ids.sorted()
+        }.getOrElse { fallback }
     }
 
     override fun isRootOrSystem(): Boolean {
