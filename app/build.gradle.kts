@@ -11,11 +11,11 @@ android {
     namespace = "dev.zwander.installwithoptions"
     compileSdk = 37
     defaultConfig {
-        applicationId = "dev.zwander.installwithoptions"
+        applicationId = "dev.zwander.installwithoptions.a175n"
         minSdk = 24
         targetSdk = 37
-        versionCode = 27
-        versionName = "0.9.2"
+        versionCode = 29
+        versionName = "0.9.2-a175n.2"
 
         vectorDrawables {
             useSupportLibrary = true

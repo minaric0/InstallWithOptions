@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.AssetFileDescriptor
 import android.content.pm.PackageInstaller
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -49,9 +50,13 @@ import dev.zwander.installwithoptions.data.Settings
 import dev.zwander.installwithoptions.data.getMutableOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.IOException
+import java.util.UUID
 
 const val INSTALL_STATUS_ACTION =
     "${BuildConfig.APPLICATION_ID}.intent.action.INSTALL_STATUS"
+const val INSTALL_STATUS_TOKEN_EXTRA = "${BuildConfig.APPLICATION_ID}.extra.STATUS_TOKEN"
+const val INSTALL_REQUESTED_PACKAGE_EXTRA = "${BuildConfig.APPLICATION_ID}.extra.REQUESTED_PACKAGE"
 
 data class Installer(
     val install: () -> Unit,
@@ -80,6 +85,8 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
         mutableStateOf(false)
     }
 
+    var activePackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var activeToken by remember { mutableStateOf<String?>(null) }
     val options by DataModel.selectedOptions.collectAsState()
 
     val applier = remember {
@@ -95,14 +102,21 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
     val receiver = remember {
         object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action == INSTALL_STATUS_ACTION) {
+                if (
+                    intent.action == INSTALL_STATUS_ACTION &&
+                    activeToken != null &&
+                    intent.getStringExtra(INSTALL_STATUS_TOKEN_EXTRA) == activeToken
+                ) {
                     val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
                     val specificMessage = context.getSpecificErrorMessage(
                         legacyStatus = intent.getIntExtra("android.content.pm.extra.LEGACY_STATUS", Int.MIN_VALUE),
                     )
                     val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                    val packageName =
-                        intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME) ?: ""
+                    val packageName = intent.getStringExtra(INSTALL_REQUESTED_PACKAGE_EXTRA)
+                        .orEmpty()
+                        .ifBlank { intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME).orEmpty() }
+
+                    if (packageName !in activePackages) return
 
                     when (status) {
                         PackageInstaller.STATUS_PENDING_USER_ACTION -> {
@@ -153,8 +167,8 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
         }
     }
 
-    LaunchedEffect(key1 = statuses.size) {
-        if (statuses.size == updatedFiles.size) {
+    LaunchedEffect(statuses.size, activePackages) {
+        if (activePackages.isNotEmpty() && statuses.size == activePackages.size) {
             isInstalling = false
         }
     }
@@ -172,7 +186,7 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
         }
     }
 
-    statuses.takeIf { it.isNotEmpty() && it.size == updatedFiles.size }?.let { s ->
+    statuses.takeIf { it.isNotEmpty() && activePackages.isNotEmpty() && it.size == activePackages.size }?.let { s ->
         AlertDialog(
             onDismissRequest = { statuses = listOf() },
             confirmButton = {
@@ -230,61 +244,79 @@ fun rememberPackageInstaller(files: Map<String, List<DocumentFile>>): Installer 
     return Installer(
         install = remember {
             {
-                if (shellInterface != null) {
+                val service = shellInterface
+                if (service != null && !isInstalling && updatedFiles.isNotEmpty()) {
+                    // Freeze this batch. Importing or editing the queue must not alter
+                    // result accounting while PackageInstaller works asynchronously.
+                    val batch = updatedFiles
+                    val packages = batch.keys.toSet()
+                    val token = UUID.randomUUID().toString()
+                    val selectedFlags = options.map { it.value }.toIntArray()
+                    val installerName = MutableOption.InstallerPackage.settingsKey.getValue()
+                    val targetUser = MutableOption.TargetUser.settingsKey.getValue()
+
+                    activeToken = token
+                    activePackages = packages
+                    statuses = emptyList()
                     isInstalling = true
-                }
 
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        shellInterface?.install(
-                            updatedFiles.map { (k, v) ->
-                                k to v.map {
-                                    context.contentResolver.openAssetFileDescriptor(
-                                        it.uri,
-                                        "r",
-                                    )
-                                }
-                            }.toMap(),
-                            options.map { it.value }.toIntArray(),
-                            applier,
-                            MutableOption.InstallerPackage.settingsKey.getValue(),
-                            MutableOption.TargetUser.settingsKey.getValue(),
-                            object : IErrorCallback.Stub() {
-                                override fun onError(error: String?, errorClass: String?) {
-                                    SafeBugsnag.leaveBreadcrumb(
-                                        "$errorClass: $error",
-                                    )
+                    scope.launch(Dispatchers.IO) {
+                        val openDescriptors = mutableListOf<AssetFileDescriptor>()
 
-                                    statuses = updatedFiles.flatMap { (_, v) ->
-                                        v.map {
-                                            InstallResult(
+                        fun failOutstanding(error: String) {
+                            scope.launch(Dispatchers.Main.immediate) {
+                                if (activeToken == token) {
+                                    statuses = packages.map { name ->
+                                        statuses.firstOrNull { it.packageName == name }
+                                            ?: InstallResult(
                                                 status = InstallStatus.FAILURE,
-                                                packageName = it.name ?: it.uri.toString(),
-                                                message = "$errorClass: $error",
+                                                packageName = name,
+                                                message = error,
                                                 specificMessage = null,
                                             )
-                                        }
                                     }
                                 }
-                            },
-                        )
-                    } catch (e: Exception) {
-                        statuses = updatedFiles.flatMap { (_, v) ->
-                            v.map {
-                                InstallResult(
-                                    status = InstallStatus.FAILURE,
-                                    packageName = it.name ?: it.uri.toString(),
-                                    message = e.extractErrorMessage() ?: e.toString(),
-                                    specificMessage = null,
-                                )
                             }
+                        }
+
+                        try {
+                            val descriptors = batch.mapValues { (_, documents) ->
+                                documents.map { document ->
+                                    val descriptor = context.contentResolver.openAssetFileDescriptor(
+                                        document.uri,
+                                        "r",
+                                    ) ?: throw IOException("Unable to open APK: ${document.name ?: document.uri}")
+                                    openDescriptors += descriptor
+                                    descriptor
+                                }
+                            }
+
+                            service.install(
+                                descriptors,
+                                selectedFlags,
+                                applier,
+                                installerName,
+                                targetUser,
+                                token,
+                                object : IErrorCallback.Stub() {
+                                    override fun onError(error: String?, errorClass: String?) {
+                                        SafeBugsnag.leaveBreadcrumb("$errorClass: $error")
+                                        failOutstanding("$errorClass: $error")
+                                    }
+                                },
+                            )
+                        } catch (e: Exception) {
+                            failOutstanding(e.extractErrorMessage() ?: e.toString())
+                        } finally {
+                            // Close sender-side FDs even when a split APK fails midway.
+                            openDescriptors.forEach { fd -> runCatching { fd.close() } }
                         }
                     }
                 }
             }
         },
         isInstalling = isInstalling,
-        totalPackages = updatedFiles.size,
+        totalPackages = activePackages.size,
         completed = statuses.size,
     )
 }

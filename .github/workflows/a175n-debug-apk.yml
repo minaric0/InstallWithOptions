@@ -1,0 +1,55 @@
+name: Build Galaxy A17 debug APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+concurrency:
+  group: galaxy-a17-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install API 37 platform
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+          # Android 17's SDK is distributed as android-37.0; some AGP
+          # resolution paths still expect the legacy android-37 directory.
+          if test -d "$SDK_ROOT/platforms/android-37.0" && ! test -e "$SDK_ROOT/platforms/android-37"; then
+            ln -s android-37.0 "$SDK_ROOT/platforms/android-37"
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Save APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: InstallWithOptions-A175N-Android17-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
