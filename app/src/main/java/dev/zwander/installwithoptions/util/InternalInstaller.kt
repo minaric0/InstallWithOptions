@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
 import android.os.Build
 import android.os.IBinder
@@ -40,11 +41,12 @@ class InternalInstaller(private val context: Context) {
     ) {
         require(statusToken.isNotBlank()) { "Installation token must not be blank" }
         try {
+            val isBatch = fileDescriptors.size > 1
             fileDescriptors.forEach { (packageName, fds) ->
                 require(fds.isNotEmpty()) { "Empty APK group: $packageName" }
                 installPackagesInSession(
                     packageName, fds.toTypedArray(), options,
-                    applier, installerPackageName, userId, statusToken,
+                    applier, installerPackageName, userId, statusToken, isBatch,
                 )
             }
         } finally {
@@ -64,6 +66,7 @@ class InternalInstaller(private val context: Context) {
         installerPackageName: String,
         userId: Int,
         statusToken: String,
+        isBatch: Boolean,
     ) {
         try {
             val params: PackageInstaller.SessionParams = PackageInstaller.SessionParams(
@@ -74,11 +77,24 @@ class InternalInstaller(private val context: Context) {
                         .set(this, flags)
                 }
 
+                // These documents were selected from device storage, not from an
+                // app store. Labelling them as STORE can affect Android policy.
+                setAppPackageName(packageName)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PackageInstaller.SessionParams::class.java
-                        .getMethod("setPackageSource", Int::class.java)
-                        .invoke(this, PackageInstaller.PACKAGE_SOURCE_STORE)
-                    this.setInstallerPackageName(installerPackageName)
+                    setPackageSource(PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setInstallScenario(
+                        if (isBatch) PackageManager.INSTALL_SCENARIO_BULK
+                        else PackageManager.INSTALL_SCENARIO_FAST,
+                    )
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    setApplicationEnabledSettingPersistent()
+                }
+                val knownLengths = fileDescriptors.map { it.length }
+                if (knownLengths.all { it >= 0L }) {
+                    setSize(knownLengths.sum())
                 }
 
                 applier.applyOptions(this)
