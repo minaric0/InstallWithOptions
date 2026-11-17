@@ -66,32 +66,34 @@ class ShellInterface constructor() : IShellInterface.Stub() {
         val userManagerInstance = Class.forName("android.os.IUserManager\$Stub")
             .getMethod("asInterface", IBinder::class.java)
             .invoke(null, SystemServiceHelper.getSystemService(Context.USER_SERVICE))
-        val users = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT_FULL <= Build.VERSION_CODES_FULL.BAKLAVA) {
+        // Samsung firmware may expose different IUserManager method overloads
+        // than the AOSP SDK. Resolve at runtime instead of relying on an SDK cap.
+        val users = runCatching {
             userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-                Boolean::class.java,
-                Boolean::class.java,
+                "getUsers", Boolean::class.java, Boolean::class.java, Boolean::class.java,
             ).invoke(userManagerInstance, false, false, false)
-        } else {
-            userManagerInstance::class.java.getMethod(
-                "getUsers",
-                Boolean::class.java,
-            ).invoke(userManagerInstance, false)
-        } as? List<*>
-        val getProfiles = userManagerInstance::class.java.getMethod(
-            "getProfiles",
-            Int::class.java,
-            Boolean::class.java,
-        )
+        }.getOrElse {
+            runCatching {
+                userManagerInstance::class.java.getMethod(
+                    "getUsers", Boolean::class.java,
+                ).invoke(userManagerInstance, false)
+            }.getOrNull()
+        } as? List<*> ?: return listOf(myUserId())
 
-        @Suppress("UNCHECKED_CAST")
-        val profiles = users?.flatMap { user ->
-            (getProfiles.invoke(userManagerInstance, userInfoIdField.get(user) as Int, false) as? List<*>)?.map { userInfoIdField.get(it) as Int }
-                ?: listOf()
-        } ?: listOf()
+        val profiles = runCatching {
+            val getProfiles = userManagerInstance::class.java.getMethod(
+                "getProfiles", Int::class.java, Boolean::class.java,
+            )
+            users.flatMap { user ->
+                (getProfiles.invoke(
+                    userManagerInstance,
+                    userInfoIdField.get(user) as Int,
+                    false,
+                ) as? List<*>)?.map { userInfoIdField.get(it) as Int } ?: emptyList()
+            }
+        }.getOrDefault(emptyList())
 
-        return profiles
+        return (profiles + myUserId()).distinct().sorted()
     }
 
     override fun isRootOrSystem(): Boolean {
