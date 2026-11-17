@@ -90,6 +90,7 @@ import dev.zwander.installwithoptions.data.rememberMutableOptions
 import dev.zwander.installwithoptions.ui.theme.InstallWithOptionsTheme
 import dev.zwander.installwithoptions.util.ElevatedPermissionHandler
 import dev.zwander.installwithoptions.util.LocalShellInterface
+import dev.zwander.installwithoptions.util.getShizukuPackageName
 import dev.zwander.installwithoptions.util.handleIncomingUris
 import dev.zwander.installwithoptions.util.plus
 import dev.zwander.installwithoptions.util.rememberPackageInstaller
@@ -206,6 +207,13 @@ fun MainContent(modifier: Modifier = Modifier) {
     }
     val (install, isInstalling, total, completed) = rememberPackageInstaller(selectedFiles)
     val backendReady = LocalShellInterface.current != null
+    val shizukuVersion = remember(context, backendReady) {
+        runCatching {
+            context.getShizukuPackageName()?.let { pkg ->
+                context.packageManager.getPackageInfo(pkg, 0).versionName
+            }
+        }.getOrNull()
+    }
 
     Box(
         modifier = modifier,
@@ -355,6 +363,12 @@ fun MainContent(modifier: Modifier = Modifier) {
                                                 },
                                                 modifier = Modifier.weight(1f),
                                             ) { Text(stringResource(R.string.a17_test_preset)) }
+                                        }
+                                        if (shizukuVersion == "13.6.0") {
+                                            Text(
+                                                text = stringResource(R.string.a17_mediatek_shizuku_warning),
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
                                         }
                                         Text(
                                             text = stringResource(R.string.a17_preset_explanation),
