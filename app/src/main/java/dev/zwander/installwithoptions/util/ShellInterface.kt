@@ -77,13 +77,14 @@ class ShellInterface constructor() : IShellInterface.Stub() {
                 .sortedByDescending { it.parameterTypes.size }
                 .firstNotNullOfOrNull { method ->
                     runCatching {
-                        val args = method.parameterTypes.map { type ->
-                            when (type) {
+                        val args = arrayOfNulls<Any>(method.parameterTypes.size)
+                        method.parameterTypes.forEachIndexed { index, type ->
+                            args[index] = when (type) {
                                 java.lang.Boolean.TYPE -> false
                                 java.lang.Integer.TYPE -> 0
                                 else -> error("Unsupported getUsers argument")
                             }
-                        }.toTypedArray()
+                        }
                         method.invoke(manager, *args) as? List<*>
                     }.getOrNull()
                 }.orEmpty()
