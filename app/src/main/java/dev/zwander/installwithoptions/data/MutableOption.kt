@@ -200,7 +200,6 @@ sealed class MutableOption<T : Any?>(
     }
 
     @SuppressLint("InlinedApi")
-    @SuppressLint("InlinedApi")
     @Keep
     data object InstallScenario : MutableOption<Int>(
         settingsKey = SettingsKey.Int(
