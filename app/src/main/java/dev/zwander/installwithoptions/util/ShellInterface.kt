@@ -34,6 +34,7 @@ class ShellInterface constructor() : IShellInterface.Stub() {
         applier: IOptionsApplier,
         installerPackageName: String?,
         userId: Int,
+        statusToken: String?,
         errorCallback: IErrorCallback,
     ) {
         if (Looper.myLooper() == null) {
@@ -50,6 +51,7 @@ class ShellInterface constructor() : IShellInterface.Stub() {
                 applier,
                 installerPackageName.takeIf { !it.isNullOrBlank() } ?: "shell",
                 actualUserId,
+                requireNotNull(statusToken) { "Missing installation status token" },
             )
         } catch (e: Throwable) {
             errorCallback.onError(e.extractErrorMessage(), e::class.java.canonicalName ?: e::class.java.name)
