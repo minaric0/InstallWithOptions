@@ -201,6 +201,7 @@ fun MainContent(modifier: Modifier = Modifier) {
         resources.getString(it.labelResource)
     }
     val (install, isInstalling, total, completed) = rememberPackageInstaller(selectedFiles)
+    val serviceConnected = LocalShellInterface.current != null
 
     Box(
         modifier = modifier,
@@ -239,6 +240,7 @@ fun MainContent(modifier: Modifier = Modifier) {
                                         }
                                     },
                                     modifier = Modifier.weight(1f),
+                                    enabled = !isInstalling && !isImporting,
                                 ) {
                                     Box(
                                         modifier = Modifier
@@ -269,7 +271,7 @@ fun MainContent(modifier: Modifier = Modifier) {
 
                                 OutlinedButton(
                                     onClick = { install() },
-                                    enabled = selectedFiles.isNotEmpty(),
+                                    enabled = selectedFiles.isNotEmpty() && serviceConnected && !isInstalling && !isImporting,
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(text = stringResource(id = R.string.install))
@@ -301,6 +303,12 @@ fun MainContent(modifier: Modifier = Modifier) {
                                 WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
                                     .asPaddingValues(),
                     ) {
+                        item(key = "a175n_profile") {
+                            DeviceProfileCard(
+                                enabled = !isInstalling && !isImporting,
+                                onApplyPreset = { selectedOptions = it },
+                            )
+                        }
                         items(items = options, key = { it.labelResource }) { option ->
                             when (option) {
                                 is InstallOption -> {
