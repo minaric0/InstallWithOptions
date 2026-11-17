@@ -12,22 +12,25 @@ import java.io.File
 
 fun Context.handleIncomingUris(uris: List<Uri>) {
     DataModel.isImporting.value = true
-    val currentSelection = DataModel.selectedFiles.value.toMutableMap()
+    try {
+        val currentSelection = DataModel.selectedFiles.value.toMutableMap()
 
-    uris.forEach { uri ->
-        val file = DocumentFile.fromSingleUri(this, uri) ?: return@forEach
+        uris.forEach { uri ->
+            val file = DocumentFile.fromSingleUri(this, uri) ?: return@forEach
 
-        if (file.isApk) {
-            addApkFile(file, currentSelection)
-        } else if (file.isSplitBundle) {
-            copyZipToCacheAndExtract(file).forEach { innerFile ->
-                addApkFile(innerFile, currentSelection)
+            if (file.isApk) {
+                addApkFile(file, currentSelection)
+            } else if (file.isSplitBundle) {
+                copyZipToCacheAndExtract(file).forEach { innerFile ->
+                    addApkFile(innerFile, currentSelection)
+                }
             }
         }
-    }
 
-    DataModel.selectedFiles.value = currentSelection
-    DataModel.isImporting.value = false
+        DataModel.selectedFiles.value = currentSelection
+    } finally {
+        DataModel.isImporting.value = false
+    }
 }
 
 private val apkLiteClass by lazy {
@@ -46,9 +49,9 @@ private fun Context.addApkFile(file: DocumentFile, currentSelection: MutableMap<
     try {
         val realFile = if (file.uri.scheme == "file") file else run {
             contentResolver.openInputStream(file.uri).use { input ->
-                val dest = File(cacheDir, "${file.name ?: file.uri}")
+                val dest = File.createTempFile("iwo-apk-", ".apk", cacheDir)
                 dest.outputStream().use { output ->
-                    input?.copyTo(output)
+                    requireNotNull(input) { "Cannot read APK: ${file.uri}" }.copyTo(output)
                 }
                 DocumentFile.fromFile(dest)
             }
@@ -67,8 +70,8 @@ private fun Context.addApkFile(file: DocumentFile, currentSelection: MutableMap<
 }
 
 private fun Context.copyZipToCacheAndExtract(zip: DocumentFile): List<DocumentFile> {
-    val destFile = File(cacheDir, zip.name ?: zip.uri.toString())
-    val destDir = File(cacheDir, "${destFile.name}_extracted").apply {
+    val destFile = File.createTempFile("iwo-bundle-", ".zip", cacheDir)
+    val destDir = File(cacheDir, "${destFile.nameWithoutExtension}_extracted").apply {
         deleteRecursively()
         mkdirs()
     }
@@ -76,7 +79,7 @@ private fun Context.copyZipToCacheAndExtract(zip: DocumentFile): List<DocumentFi
     try {
         contentResolver.openInputStream(zip.uri).use { input ->
             destFile.outputStream().use { output ->
-                input?.copyTo(output)
+                requireNotNull(input) { "Cannot read bundle: ${zip.uri}" }.copyTo(output)
             }
         }
     } catch (_: IllegalStateException) {
