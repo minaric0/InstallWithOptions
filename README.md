@@ -1,3 +1,5 @@
+> **SM-A175N / Android 17 fork:** [Device-specific presets, build instructions and compatibility notes](SM-A175N-ANDROID17.md). The fork uses a separate Android application ID and can coexist with the upstream app.
+
 # Install with Options
 An app with a simple purpose: more advanced app installs without needing to use ADB.
 
