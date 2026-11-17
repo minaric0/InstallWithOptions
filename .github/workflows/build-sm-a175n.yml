@@ -26,11 +26,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK tools
-        uses: android-actions/setup-android@v3
-
       - name: Install Android 17 SDK
         run: |
+          # ubuntu-latest already has cmdline-tools; setup-android@v3
+          # incorrectly requests the removed SDK package "tools".
+          sdkmanager --version
           sdkmanager --install "platforms;android-37" "build-tools;37.0.0"
 
       - name: Cache Gradle
