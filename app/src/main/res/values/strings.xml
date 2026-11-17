@@ -147,4 +147,13 @@
 
     <string name="install_failed_no_matching_abis">The app you\'re attempting to install contains 32-bit-only code and your device only supports 64-bit code. You won\'t be able to install or use this app.</string>
     <string name="install_failed_already_exists">This app is already installed. To reinstall or upgrade, make sure the \"Replace Existing\" option is checked.</string>
+    <string name="a175n_profile_title">Galaxy A17 / Android 17 profile</string>
+    <string name="a175n_profile_device">Detected: %1$s · API %2$d · Build %3$s</string>
+    <string name="a175n_service_ready">Installer service: connected</string>
+    <string name="a175n_service_missing">Installer service: unavailable (start Shizuku or grant root)</string>
+    <string name="a175n_preset_standard">Standard</string>
+    <string name="a175n_preset_test">Test APK</string>
+    <string name="a175n_preset_legacy">Legacy APK</string>
+    <string name="a175n_profile_caveat">Presets replace the currently selected flags. Legacy mode bypasses only the minimum target SDK block; it cannot bypass APK signatures, unsupported ABIs or Android downgrade restrictions.</string>
+    <string name="a175n_profile_mismatch">SM-A175N on Android 17 (API 37) was not detected. Device presets are disabled.</string>
 </resources>
