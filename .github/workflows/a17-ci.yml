@@ -1,7 +1,7 @@
 name: Android 17 (SM-A175N) build
 on:
   push:
-    branches: [main, feature/a17-android17-optimized]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
