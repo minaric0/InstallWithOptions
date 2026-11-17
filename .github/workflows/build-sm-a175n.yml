@@ -33,7 +33,14 @@ jobs:
           SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager | sort -V | tail -n 1)"
           test -x "$SDKMANAGER"
           "$SDKMANAGER" --version
-          "$SDKMANAGER" --install "platforms;android-37" "build-tools;37.0.0"
+          # Android 17 Cinnamon Bun is currently published as a preview SDK.
+          "$SDKMANAGER" --list --channel=3 > "$RUNNER_TEMP/android-sdk-packages.txt"
+          grep -Ei 'android-(37|CinnamonBun)|build-tools;37' "$RUNNER_TEMP/android-sdk-packages.txt" || true
+          PLATFORM=$(grep -Eo 'platforms;android-(37|CinnamonBun)' "$RUNNER_TEMP/android-sdk-packages.txt" | head -n 1 || true)
+          test -n "$PLATFORM" || { echo "::error::Android 17 preview SDK not in SDK repository"; exit 1; }
+          BUILD_TOOLS=$(grep -Eo 'build-tools;37[^[:space:]|]*' "$RUNNER_TEMP/android-sdk-packages.txt" | head -n 1 || true)
+          test -n "$BUILD_TOOLS" || { echo "::error::Android SDK Build Tools 37 not available"; exit 1; }
+          "$SDKMANAGER" --install "$PLATFORM" "$BUILD_TOOLS" --channel=3
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
