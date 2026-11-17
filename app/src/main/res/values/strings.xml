@@ -147,4 +147,9 @@
 
     <string name="install_failed_no_matching_abis">The app you\'re attempting to install contains 32-bit-only code and your device only supports 64-bit code. You won\'t be able to install or use this app.</string>
     <string name="install_failed_already_exists">This app is already installed. To reinstall or upgrade, make sure the \"Replace Existing\" option is checked.</string>
+
+    <string name="sm_a175n_profile_title">Galaxy A17 (SM-A175N) · Android 17</string>
+    <string name="sm_a175n_safe_preset">Safe preset</string>
+    <string name="sm_a175n_legacy_preset">Legacy APKs</string>
+    <string name="sm_a175n_profile_desc">Safe only enables replacement of existing apps. Legacy also enables test-only installs and the low-target-SDK bypass. One UI 9 must be verified separately; neither preset bypasses APK signatures or Samsung security controls.</string>
 </resources>
