@@ -22,7 +22,8 @@ jobs:
         run: |
           SDKMANAGER="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0"
+          "$SDKMANAGER" --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
+          ln -sfn android-37.0 "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/platforms/android-37"
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests and debug APK
         run: bash ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
