@@ -217,6 +217,14 @@ sealed class InstallOption(
     )
 
     @Keep
+    data object IgnoreDexoptProfile : InstallOption(
+        value = 1 shl 28,
+        minSdk = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+        labelResource = R.string.ignore_dexopt_profile,
+        descResource = R.string.ignore_dexopt_profile_desc,
+    )
+
+    @Keep
     data object BypassLowTargetSdkBlock : InstallOption(
         value = 0x01000000,
         minSdk = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
