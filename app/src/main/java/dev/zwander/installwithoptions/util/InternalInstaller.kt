@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
 import android.os.Build
 import android.os.IBinder
@@ -16,6 +17,7 @@ import android.util.Log
 import dev.zwander.installwithoptions.BuildConfig
 import dev.zwander.installwithoptions.IOptionsApplier
 import rikka.shizuku.SystemServiceHelper
+import java.io.IOException
 import java.io.OutputStream
 import kotlin.random.Random
 
@@ -38,7 +40,7 @@ class InternalInstaller(private val context: Context) {
         userId: Int,
     ) {
         fileDescriptors.forEach { (_, fds) ->
-            installPackagesInSession(fds.toTypedArray(), options, applier, installerPackageName, userId)
+            installPackagesInSession(fds.toTypedArray(), options, applier, installerPackageName, userId, fileDescriptors.size > 1)
         }
     }
 
@@ -49,6 +51,7 @@ class InternalInstaller(private val context: Context) {
         applier: IOptionsApplier,
         installerPackageName: String,
         userId: Int,
+        isBatch: Boolean,
     ) {
         try {
             val params: PackageInstaller.SessionParams = PackageInstaller.SessionParams(
@@ -59,11 +62,22 @@ class InternalInstaller(private val context: Context) {
                         .set(this, flags)
                 }
 
+                // Correctly describe on-device APKs; this is not an app-store installation.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PackageInstaller.SessionParams::class.java
-                        .getMethod("setPackageSource", Int::class.java)
-                        .invoke(this, PackageInstaller.PACKAGE_SOURCE_STORE)
-                    this.setInstallerPackageName(installerPackageName)
+                    setPackageSource(PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    setInstallerPackageName(installerPackageName)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setInstallScenario(
+                        if (isBatch) PackageManager.INSTALL_SCENARIO_BULK
+                        else PackageManager.INSTALL_SCENARIO_FAST,
+                    )
+                }
+                // The package manager can reserve space before streaming when size is known.
+                if (fileDescriptors.all { it.length >= 0 }) {
+                    setSize(fileDescriptors.sumOf { it.length })
                 }
 
                 applier.applyOptions(this)
@@ -133,10 +147,14 @@ class InternalInstaller(private val context: Context) {
                         }
                     }
 
-                    writer?.use { output ->
-                        fd.createInputStream()?.use { input ->
-                            input.copyTo(output)
+                    val output = writer ?: throw IOException("Unable to open install-session writer for split $index")
+                    val bytesCopied = output.use { stream ->
+                        fd.createInputStream().use { input ->
+                            input.copyTo(stream, 64 * 1024)
                         }
+                    }
+                    if (fd.length >= 0 && bytesCopied != fd.length) {
+                        throw IOException("Short APK write for split $index: $bytesCopied of ${fd.length} bytes")
                     }
                 }
 

@@ -1,0 +1,60 @@
+name: Build SM-A175N Android 17 APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/sm-a175n-android17
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 17 SDK
+        run: |
+          # ubuntu-latest already has cmdline-tools; setup-android@v3
+          # incorrectly requests the removed SDK package "tools".
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --version
+          # Android 17 Cinnamon Bun is currently published as a preview SDK.
+          "$SDKMANAGER" --list --channel=3 > "$RUNNER_TEMP/android-sdk-packages.txt"
+          grep -Ei 'android-(37|CinnamonBun)|build-tools;37' "$RUNNER_TEMP/android-sdk-packages.txt" || true
+          # The API 37 base SDK is published as android-37.0 (not android-37).
+          PLATFORM="platforms;android-37.0"
+          BUILD_TOOLS="build-tools;37.0.0"
+          grep -Fq "$PLATFORM " "$RUNNER_TEMP/android-sdk-packages.txt" || { echo "::error::Android 17 platform missing"; exit 1; }
+          grep -Fq "$BUILD_TOOLS " "$RUNNER_TEMP/android-sdk-packages.txt" || { echo "::error::Build Tools 37 missing"; exit 1; }
+          "$SDKMANAGER" --install "$PLATFORM" "$BUILD_TOOLS" --channel=3
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: InstallWithOptions-SM-A175N-Android17-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

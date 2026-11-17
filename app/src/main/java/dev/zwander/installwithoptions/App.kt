@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Build
 import com.bugsnag.android.Bugsnag
 import com.bugsnag.android.performance.BugsnagPerformance
+import dev.zwander.installwithoptions.data.DeviceProfile
 import dev.zwander.installwithoptions.data.Settings
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,17 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         context = this
+
+        // Only seed defaults once, and never overwrite the user's existing choices.
+        if (DeviceProfile.isExactMatch) {
+            val preferences = Settings.settings
+            if (!preferences.getBoolean("sm_a175n_profile_initialized_v1", false)) {
+                if (!preferences.contains("selectedOptions")) {
+                    Settings.Keys.selectedOptions.setValue(DeviceProfile.safeOptions())
+                }
+                preferences.edit().putBoolean("sm_a175n_profile_initialized_v1", true).apply()
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             HiddenApiBypass.setHiddenApiExemptions("")

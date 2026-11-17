@@ -81,6 +81,7 @@ import androidx.core.content.IntentCompat
 import dev.icerock.moko.mvvm.flow.compose.collectAsMutableState
 import dev.zwander.installwithoptions.components.Footer
 import dev.zwander.installwithoptions.data.DataModel
+import dev.zwander.installwithoptions.data.DeviceProfile
 import dev.zwander.installwithoptions.data.InstallOption
 import dev.zwander.installwithoptions.data.MutableOption
 import dev.zwander.installwithoptions.data.rememberInstallOptions
@@ -201,6 +202,7 @@ fun MainContent(modifier: Modifier = Modifier) {
         resources.getString(it.labelResource)
     }
     val (install, isInstalling, total, completed) = rememberPackageInstaller(selectedFiles)
+    val isServiceReady = LocalShellInterface.current != null
 
     Box(
         modifier = modifier,
@@ -269,7 +271,7 @@ fun MainContent(modifier: Modifier = Modifier) {
 
                                 OutlinedButton(
                                     onClick = { install() },
-                                    enabled = selectedFiles.isNotEmpty(),
+                                    enabled = selectedFiles.isNotEmpty() && !isInstalling && !isImporting && isServiceReady,
                                     modifier = Modifier.weight(1f),
                                 ) {
                                     Text(text = stringResource(id = R.string.install))
@@ -301,6 +303,44 @@ fun MainContent(modifier: Modifier = Modifier) {
                                 WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
                                     .asPaddingValues(),
                     ) {
+                        if (DeviceProfile.isExactMatch) {
+                            item(key = "sm_a175n_profile") {
+                                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.sm_a175n_profile_title),
+                                            style = MaterialTheme.typography.titleMedium,
+                                        )
+                                        Text(
+                                            text = DeviceProfile.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = { selectedOptions = DeviceProfile.safeOptions() },
+                                                modifier = Modifier.weight(1f),
+                                            ) {
+                                                Text(stringResource(R.string.sm_a175n_safe_preset))
+                                            }
+                                            OutlinedButton(
+                                                onClick = { selectedOptions = DeviceProfile.legacyOptions() },
+                                                modifier = Modifier.weight(1f),
+                                            ) {
+                                                Text(stringResource(R.string.sm_a175n_legacy_preset))
+                                            }
+                                        }
+                                        Text(
+                                            text = stringResource(R.string.sm_a175n_profile_desc),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         items(items = options, key = { it.labelResource }) { option ->
                             when (option) {
                                 is InstallOption -> {
