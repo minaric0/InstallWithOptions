@@ -39,7 +39,7 @@ jobs:
           fi
           test -n "$SDK_MANAGER"
           yes | "$SDK_MANAGER" --licenses >/dev/null || true
-          "$SDK_MANAGER" --install "platforms;android-37" "build-tools;36.0.0"
+          "$SDK_MANAGER" --install --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
