@@ -120,4 +120,9 @@
     <string name="a175n_error_missing_split">필수 분할 APK가 누락되었습니다. 전체 APK 번들을 선택하세요.</string>
     <string name="a175n_error_target_sdk">target SDK가 너무 오래되어 차단되었습니다. 기기 정책이 허용하는 경우 구형 APK 프리셋을 사용하세요.</string>
     <string name="a175n_error_user_restricted">기기 정책 또는 삼성 보호 설정으로 인해 설치가 제한됩니다.</string>
+    <string name="a175n_profile_abis">네이티브 ABI: %1$s</string>
+    <string name="a175n_profile_storage">내부 저장 공간 여유: %1$s</string>
+    <string name="a175n_profile_patch">보안 패치: %1$s</string>
+    <string name="a175n_copy_diagnostics">진단 정보 복사</string>
+    <string name="a175n_auto_blocker_warning">삼성 자동 차단 기능이 APK 설치 및 USB 디버깅 명령을 제한할 수 있습니다. 설치가 차단되면 보안 및 개인정보 보호 설정을 확인하세요.</string>
 </resources>
