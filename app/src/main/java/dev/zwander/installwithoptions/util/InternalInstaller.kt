@@ -36,19 +36,34 @@ class InternalInstaller(private val context: Context) {
         applier: IOptionsApplier,
         installerPackageName: String,
         userId: Int,
+        statusToken: String,
     ) {
-        fileDescriptors.forEach { (_, fds) ->
-            installPackagesInSession(fds.toTypedArray(), options, applier, installerPackageName, userId)
+        require(statusToken.isNotBlank()) { "Installation token must not be blank" }
+        try {
+            fileDescriptors.forEach { (packageName, fds) ->
+                require(fds.isNotEmpty()) { "Empty APK group: $packageName" }
+                installPackagesInSession(
+                    packageName, fds.toTypedArray(), options,
+                    applier, installerPackageName, userId, statusToken,
+                )
+            }
+        } finally {
+            // Binder transfers descriptor copies; the receiving process owns them.
+            fileDescriptors.values.flatten().forEach { fd ->
+                runCatching { fd.close() }
+            }
         }
     }
 
     @SuppressLint("InlinedApi")
     private fun installPackagesInSession(
+        packageName: String,
         fileDescriptors: Array<AssetFileDescriptor>,
         options: IntArray,
         applier: IOptionsApplier,
         installerPackageName: String,
         userId: Int,
+        statusToken: String,
     ) {
         try {
             val params: PackageInstaller.SessionParams = PackageInstaller.SessionParams(
@@ -105,6 +120,8 @@ class InternalInstaller(private val context: Context) {
                     context, Random.nextInt(),
                     Intent(INSTALL_STATUS_ACTION).apply {
                         `package` = BuildConfig.APPLICATION_ID
+                        putExtra(INSTALL_STATUS_TOKEN_EXTRA, statusToken)
+                        putExtra(INSTALL_REQUESTED_PACKAGE_EXTRA, packageName)
                     },
                     PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_ALLOW_UNSAFE_IMPLICIT_INTENT,
                 )
@@ -133,8 +150,8 @@ class InternalInstaller(private val context: Context) {
                         }
                     }
 
-                    writer?.use { output ->
-                        fd.createInputStream()?.use { input ->
+                    requireNotNull(writer) { "Unable to open installation session writer" }.use { output ->
+                        fd.createInputStream().use { input ->
                             input.copyTo(output)
                         }
                     }
