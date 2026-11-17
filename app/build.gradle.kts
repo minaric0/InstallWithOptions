@@ -94,4 +94,5 @@ dependencies {
     implementation(libs.libsu.core)
     implementation(libs.libsu.service)
     implementation(libs.zip4j)
+    testImplementation("junit:junit:4.13.2")
 }
